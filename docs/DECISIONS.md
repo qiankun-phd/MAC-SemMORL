@@ -118,6 +118,35 @@ Record the booking confirmation reference here once received:
 
 ### Consequences
 - Compute allocation becomes an explicit project dependency for Phase 1 execution.
+
+---
+
+## ADR-0005 — Real channel trace: DeepMIMO license check + replay shim
+
+**Date**: 2026-05-02
+**Status**: Pending validation
+
+### Context
+Task C.4.5 requires at least one experiment replaying realistic channel traces.
+DeepMIMO is a common choice for reproducible ray-tracing-based channels, but we
+must confirm licensing and verify that we can feed samples into our environment
+PHY pipeline (pathloss/SNR/throughput).
+
+### Decision
+- Implement a minimal replay shim at `src/channel/deepmimo_replay.py`.
+- Defer final DeepMIMO adoption until its license is reviewed and recorded.
+
+### Alternatives Considered
+- 3GPP TR 38.901 UMa/UMi synthetic channel generation as a license-safe fallback.
+- Other open UAV channel datasets (limited availability/coverage).
+
+### Consequences
+- We can prototype the replay plumbing immediately using exported `.npz` channel
+  tensors, while keeping the dataset choice reversible.
+- A follow-up is required to:
+  1) paste the DeepMIMO license text/URL here,
+  2) record whether academic use is allowed,
+  3) cite the exact scenario(s) selected (UAV-friendly, elevated TX).
 - The Phase 1 experiment matrix must be revisited after the M=2 pilot to confirm scaling.
 
 See `docs/PLAN.md` §H and `docs/ROADMAP.md` P0.2.
