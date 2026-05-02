@@ -72,3 +72,34 @@ Default to **CTDE for initial M=2 experiments**. Switch to Federated Latent if w
 See `docs/SKETCHES.md` §1.3 for technical detail.
 
 ---
+
+## ADR-0004 — Phase 1 multi-UAV GPU reservation (6 GPUs × 6 weeks)
+
+**Date**: 2026-05-02  
+**Status**: Pending confirmation (booking required by 2026-08-01)
+
+### Context
+Phase 1 multi-UAV training (Task C.1) must run before GLOBECOM notification. The plan calls for a 6 GPU × 6 week window and scaling from the conference single-UAV baseline. We also need a clear fallback if quota slips.
+
+### Decision
+1. **Reservation request**: block **~6 GPUs × 6 weeks** on the long-training server `qiankun@172.28.23.182`; revise after the M=2 pilot (D1 in `docs/ROADMAP.md`).
+2. **Priority allocation**: request priority access on the same host for Phase 1 runs; dedicate a stable GPU block for multi-UAV experiments.
+3. **Per-method wall-clock estimates** based on the conference single-UAV baseline time **T₁** (per-method, per-seed):
+
+   | UAVs (M) | Estimated wall-clock | Assumption |
+   |----------|----------------------|------------|
+   | 2 | **2.2 × T₁** | linear scaling × M with 10% CTDE overhead |
+   | 4 | **4.4 × T₁** | same overhead |
+   | 5 | **5.5 × T₁** | same overhead |
+
+4. **Fallback if quota slips**: cap experiments at **M=3** and share the OADM encoder across UAVs more aggressively (single shared encoder + fewer seeds).
+
+### Alternatives Considered
+- Request 4 GPUs × 8 weeks: lower concurrency, risks missing multi-seed runs before notification.
+- Delay multi-UAV runs to Phase 2: conflicts with GLOBECOM decision window.
+
+### Consequences
+- Training throughput is bounded by the 6-GPU block; adjust seeds or M if the pilot over-runs.
+- Confirmation must be logged (email/Slack) once booking is accepted; update this ADR with the reference.
+
+---
