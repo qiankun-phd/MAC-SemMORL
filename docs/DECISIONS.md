@@ -72,3 +72,54 @@ Default to **CTDE for initial M=2 experiments**. Switch to Federated Latent if w
 See `docs/SKETCHES.md` §1.3 for technical detail.
 
 ---
+
+## ADR-0004 — Phase 1 multi-UAV training: GPU reservation and fallback
+
+**Date**: 2026-05-02
+**Status**: Accepted
+
+### Context
+Phase 1 (2026-08 to 2026-12) requires long-running multi-UAV MARL training (M = 2, 4, 5) and will be blocked by compute availability. We need to confirm GPU availability before the GLOBECOM notification (2026-08-01) and document a fallback plan if quota slips.
+
+### Decision
+- Reserve **~6 GPUs for ~6 weeks** for the Phase 1 pilot + sweep.
+- Prefer running long jobs on **`qiankun@172.28.23.182`** (long-training server) as the primary allocation target.
+- Use the following wall-clock estimate model (revise after pilot): take the conference single-UAV baseline wall-clock and scale approximately with the number of UAVs and coordination overhead.
+
+### Wall-Clock Estimates (Relative)
+Let `T1` be the measured single-UAV (M=1) wall-clock for one full training run at the conference baseline setting.
+
+- **M=2**: ~`2.4 × T1` (≈2× compute + ~20% coordination/comm overhead)
+- **M=4**: ~`5.2 × T1` (≈4× compute + ~30% overhead)
+- **M=5**: ~`6.8 × T1` (≈5× compute + ~35% overhead)
+
+Notes:
+- These are planning estimates for scheduling only; actual scaling depends on CTDE implementation details, environment step throughput, and GPU utilization.
+- After the M=2 pilot, re-fit the overhead term and update this ADR (append an addendum) and `docs/ROADMAP.md` P0.2 if needed.
+
+### Reservation Confirmation (In Writing)
+Record the booking confirmation reference here once received:
+
+- **Channel**: (email / Slack)
+- **Date confirmed**: (YYYY-MM-DD)
+- **Confirmed by**: (name / handle)
+- **Allocation window**: (YYYY-MM-DD → YYYY-MM-DD)
+- **Resources**: (~6 GPUs, model, RAM if specified)
+- **Notes**: (queue/priority constraints, preemption policy)
+
+### Alternatives Considered
+- On-demand / best-effort usage: high risk of missing the Phase 1 schedule.
+- Fewer GPUs (e.g., 2–4): increases time-to-results; compresses the window for M=4/5 sweeps.
+
+### Fallback Plan (If Quota Slips)
+- Reduce target swarm size from **M=5 → M=3** for the Phase 1 scalability section (still report M=2 as baseline).
+- Share the **OADM latent encoder** more aggressively (single shared encoder across UAVs, less frequent synchronization) to reduce compute and improve sample efficiency.
+- Narrow the hyperparameter sweep (fewer seeds / fewer preference vectors) and prioritize the ablation set that supports CTDE vs Federated-Latent decision D1.
+
+### Consequences
+- Compute allocation becomes an explicit project dependency for Phase 1 execution.
+- The Phase 1 experiment matrix must be revisited after the M=2 pilot to confirm scaling.
+
+See `docs/PLAN.md` §H and `docs/ROADMAP.md` P0.2.
+
+---
