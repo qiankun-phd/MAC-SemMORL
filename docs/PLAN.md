@@ -26,7 +26,7 @@
 Based on 2024–2026 web survey:
 
 1. **Multi-UAV MARL is mainstream** in TWC (e.g., TWC 2022 multi-UAV MEC offloading, TWC 2023 swarm-vs-jamming). Single-UAV is below the bar.
-2. **Constrained MORL is the new SOTA** (C-MORL NeurIPS 2025, PSL-MORL 2025). Soft preference alone is conference-level; hard constraints + Lagrangian/dual methods are journal-level.
+2. **Constrained MORL is the new SOTA** (C-MORL ICLR 2025, PSL-MORL AAAI 2025). Soft preference alone is conference-level; hard constraints + Lagrangian/dual methods are journal-level.
 3. **Safe DRL for wireless** is emerging (arXiv:2507.08653 Peak AoI guarantees). TWC reviewers expect at least one safety/reliability constraint.
 4. **Convergence/complexity proofs** appear in nearly every accepted TWC RL paper. Pure-empirical paper has low acceptance odds.
 5. **Real channel traces** (e.g., DeepMIMO) increasingly expected. At least one experiment with realistic channel data raises credibility.
@@ -85,8 +85,8 @@ Based on 2024–2026 web survey:
 - Per-mobility Pareto comparisons across all RL methods.
 
 #### C.4.2 More baselines
-- C-MORL (NeurIPS 2025) — constrained MORL SOTA.
-- PSL-MORL (2025) — Pareto Set Learning via hypernetwork.
+- C-MORL (ICLR 2025) — constrained MORL SOTA.
+- PSL-MORL (AAAI 2025) — Pareto Set Learning via hypernetwork.
 - MO-PPO — preference-conditioned PPO.
 - Pareto Q-Learning — classic discrete benchmark.
 - GMAC (LLM-assisted multi-agent comm) — for SemCom baseline if applicable.
@@ -191,7 +191,7 @@ The conference paper is the priority; keep journal extension in design phase onl
 
 - [ ] Lock conference paper at `main.tex`, finalize Apr 1 submission.
 - [ ] Sketch multi-UAV MOMDP formulation (1-page draft).
-- [ ] Identify which C-MORL / PSL-MORL repos to port.
+- [x] Identify which C-MORL / PSL-MORL repos to port.
 - [ ] Reserve GPU budget and verify DeepMIMO or alternative channel dataset access.
 - [ ] Decide single FT vs split between team members.
 
@@ -199,8 +199,8 @@ The conference paper is the priority; keep journal extension in design phase onl
 
 ## J. References Used in Plan Synthesis
 
-- C-MORL: arXiv:2410.02236 (NeurIPS 2025) — constrained Pareto front discovery.
-- PSL-MORL: arXiv:2501.06773 (2025) — Pareto Set Learning via hypernetwork.
+- C-MORL: arXiv:2410.02236 (ICLR 2025) — constrained Pareto front discovery. Repo: https://github.com/RuohLiuq/C-MORL @ 67473b5.
+- PSL-MORL: arXiv:2501.06773 (AAAI 2025) — Pareto Set Learning via hypernetwork.
 - Safe DRL for PAoI: arXiv:2507.08653 (2025) — peak-AoI safety constraints.
 - Multi-Agent RL UAV Swarm vs Jamming: IEEE TWC 2023, doi 10.1109/TWC.2023.3268082.
 - Multi-Agent DRL UAV-MEC Offloading: IEEE TWC 2022, doi 10.1109/TWC.2022.3153316.

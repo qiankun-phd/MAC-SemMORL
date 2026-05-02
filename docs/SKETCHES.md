@@ -144,10 +144,42 @@ In the multi-UAV setting (Task C.1), per-step cost scales as $O(M(d_z K + d_h K)
 
 ## 3. C-MORL / PSL-MORL Porting Roadmap (Task C.4 baselines)
 
-### 3.1 C-MORL (Constrained MORL, NeurIPS 2025)
+> **Survey date**: 2026-05-02  
+> **Status**: C-MORL repo found and pinned; PSL-MORL — no public repo as of survey date, re-implementation plan recorded.
 
-**Paper**: arXiv:2410.02236
-**Reference repo**: search for `c-morl` on GitHub (released alongside NeurIPS publication)
+### 3.1 C-MORL (Constrained MORL, ICLR 2025)
+
+**Paper**: arXiv:2410.02236  
+**Venue**: ICLR 2025 (The Thirteenth International Conference on Learning Representations)  
+**Official repo**: <https://github.com/RuohLiuq/C-MORL>  
+**Pinned commit**: `67473b5afbc1be55e2b8c6ae704afc927bf218ee` (2025-08-27, "Add files via upload")  
+
+#### License
+
+No explicit LICENSE file in the repository as of the survey date. TetraRL (ZexinLi0w0/TetraRL) vendors this code under fair use for research purposes and notes it will adopt whatever license the authors specify later. **Action**: Contact the corresponding author listed on the arXiv page (<https://arxiv.org/abs/2410.02236>) or the ICLR OpenReview page (<https://openreview.net/forum?id=fDGPIuCdGi>) to confirm permitted use before Phase 2 porting begins.
+
+#### MuJoCo dependency
+
+Yes — hard dependency on both:
+
+- `mujoco-py == 2.1.2.14` (legacy binding, requires MuJoCo 2.1 install)
+- `mujoco == 3.2.0` (modern binding, used by mo-gymnasium 1.1.0)
+
+Both must coexist in the same conda env (`environment.yml` pins both). This is the single most significant porting risk; our UAV-SemCom environment does **not** use MuJoCo, so the actual physics engine is not needed — only the Python RL wrappers.
+
+#### Training infrastructure
+
+| Component | Version / detail |
+|-----------|-----------------|
+| Python | 3.8.10 |
+| PyTorch | 2.0.0 + CUDA 11.8 |
+| RL framework | PPO (custom, from PGMORL codebase) |
+| Env interface | `gym == 0.21.0` (original gym API; `gymnasium==0.29.1` also installed but not the primary API) |
+| Multi-objective env | `mo-gymnasium == 1.1.0` |
+| Benchmarks used | MO-Hopper-2d/3d, MO-Ant-2d/3d, MO-Humanoid-2d (MuJoCo); Minecart, MO-Lunar-Lander (Box2D); Fruit-Tree (discrete); Building-3d/9d (SustainGym) |
+| Compute | ~2.5M env steps per run; 4 parallel envs; multi-seed |
+
+**Note on gym API**: C-MORL uses the old `gym.Env` interface (`step()` returns 4-tuple). Our `uav_semcom_env.py` will need a compatibility shim or upgrade to expose a `gym`-compatible wrapper.
 
 #### Core algorithm (two-stage)
 
@@ -158,34 +190,65 @@ In the multi-UAV setting (Task C.1), per-step cost scales as $O(M(d_z K + d_h K)
 
 | Step | Effort |
 |------|--------|
-| Clone repo, run on MuJoCo cheetah benchmark to verify baseline | 0.5 week |
+| Clone repo at pinned commit, run on Building-3d benchmark to verify two-stage baseline | 0.5 week |
+| Write `gym`-compatible wrapper for `uav_semcom_env.py`; smoke-test with C-MORL runner | 0.5 week |
 | Adapt action space: from MuJoCo control to UAV-SemCom action vector $(\nu, p, \eta)$ | 1 week |
 | Adapt reward vector: replace native reward with our 4-objective UAV-SemCom rewards | 1 week |
-| Hyperparameter tuning for our environment (preference grid, constraint thresholds) | 1 week |
+| Hyperparameter tuning for our environment (preference grid, constraint thresholds) | 0.5 week |
 | **Total** | **3.5 weeks** |
 
-**Key concern**: C-MORL is designed for **discrete preference partitions**; our continuous 56-preference grid may need adaptation. Use top-4 simplex corner preferences for Stage 1, then sweep middle.
+**Key concern**: C-MORL is designed for **discrete preference partitions**; our continuous 56-preference grid may need adaptation. Use top-4 simplex corner preferences for Stage 1, then sweep middle. Decision deadline: 2026-09-15 (see ROADMAP.md D3).
 
 ### 3.2 PSL-MORL (Pareto Set Learning, 2025)
 
-**Paper**: arXiv:2501.06773
-**Reference repo**: search for `pareto-set-learning-morl` or similar on GitHub
+**Paper**: arXiv:2501.06773  
+**Venue**: AAAI 2025 (Thirty-Ninth AAAI Conference on Artificial Intelligence)  
+**Official repo**: **Not found** — exhaustive GitHub search (2026-05-02) found no public implementation by the paper authors. The analysis file at `memgrafter/analysis` (research notes repo) confirms the paper exists but cites no code URL.  
+**Fallback plan**: Re-implement from paper algorithm box (§3.2.1 below) if no public repo by **2026-09-01**.
+
+#### License
+
+N/A — no repo.
+
+#### MuJoCo dependency
+
+Per paper: benchmarks are MO-MuJoCo (HalfCheetah, Walker2d, Ant-v2) and Fruit Tree Navigation (discrete). A re-implementation for our environment would use our own `uav_semcom_env.py` without any MuJoCo dependency.
+
+#### Training infrastructure (from paper)
+
+| Component | Detail |
+|-----------|--------|
+| RL base algorithms | TD3 (continuous), DDQN (discrete) |
+| Hypernetwork | MLP mapping $\bm{\lambda} \in \Delta^{n-1}$ → policy parameter vector $\theta_2$ |
+| Parameter fusion | $\theta = (1-\alpha)\theta_1 + \alpha\theta_2$; $\alpha$ tuned per-environment (0.01–0.05) |
+| Preference sampling | Uniform from simplex during training |
+| Scalarization | Linear: $r_\text{scalar} = \bm{\lambda}^\top \mathbf{r}$ |
+| Benchmarks | MO-HalfCheetah, MO-Walker2d, MO-Ant-v2 (MuJoCo); Fruit Tree (discrete) |
 
 #### Core algorithm
 
 Hypernetwork $h_\theta(\bm{\lambda}) \to$ policy parameters. One forward through hypernet produces a policy specialized to preference $\bm{\lambda}$.
 
+#### 3.2.1 Re-implementation plan (if no public repo by 2026-09-01)
+
+Algorithm box from paper §3 is sufficient for re-implementation:
+
+1. `psl_morl/hypernetwork.py` — MLP $h_\theta: \mathbb{R}^n \to \mathbb{R}^{|\theta_\text{actor}|}$; linear layers, ReLU activations.
+2. `psl_morl/actor.py` — parameter-fusion actor: load $\theta_2 = h_\theta(\bm{\lambda})$, fuse with base $\theta_1$.
+3. `psl_morl/train.py` — outer loop: sample $\bm{\lambda}$, run TD3 update with scalarized reward, update hypernetwork.
+4. Wrap `uav_semcom_env.py` as TD3-compatible gymnasium env.
+
 #### Adaptation steps
 
-| Step | Effort |
-|------|--------|
-| Clone repo, verify on bench task | 0.5 week |
-| Wrap our actor architecture as `policy_net(s; theta(λ))` | 1 week |
-| Train hypernetwork on our 56 preference grid | 1 week |
-| Evaluation: hypervolume + Pareto coverage | 0.5 week |
-| **Total** | **3 weeks** |
+| Step | Effort (with public repo) | Effort (re-implement) |
+|------|--------------------------|----------------------|
+| Clone / implement repo, verify on bench task | 0.5 week | 1 week |
+| Wrap our actor architecture as `policy_net(s; theta(λ))` | 1 week | 1 week |
+| Train hypernetwork on our 56 preference grid | 1 week | 1 week |
+| Evaluation: hypervolume + Pareto coverage | 0.5 week | 0.5 week |
+| **Total** | **3 weeks** | **3.5 weeks** |
 
-**Key concern**: Hypernetworks need careful initialization to avoid policy collapse; budget extra time if preliminary runs show degenerate policies.
+**Key concern**: Hypernetworks need careful initialization to avoid policy collapse; budget extra time if preliminary runs show degenerate policies. Parameter fusion coefficient $\alpha$ must be grid-searched per environment.
 
 ### 3.3 Other Recommended Baselines
 
@@ -206,7 +269,14 @@ For each ported baseline:
 
 ### 3.5 Total Baseline Porting Effort
 
-3.5 + 3 + 3 = **~10 weeks**, mostly engineering. Overlaps with Task C.1 multi-UAV work — can run in parallel with one engineer per task.
+| Baseline | Best case | Worst case (re-implement) |
+|----------|-----------|--------------------------|
+| C-MORL | 3.5 weeks | 3.5 weeks (repo found) |
+| PSL-MORL | 3 weeks (if repo appears) | 3.5 weeks (re-implement) |
+| MO-PPO + Pareto Q-Learning + Pareto-PG | 3 weeks | 3 weeks |
+| **Total** | **~9.5 weeks** | **~10 weeks** |
+
+Mostly engineering. Overlaps with Task C.1 multi-UAV work — can run in parallel with one engineer per task. Effort estimate is within ±50% of the original 3-week/3.5-week per-baseline budget.
 
 ---
 
@@ -242,8 +312,8 @@ These are the points where additional design decisions are needed before coding 
 
 ## 6. References Used in Sketches
 
-- C-MORL: arXiv:2410.02236 (NeurIPS 2025) — Stage-1/Stage-2 constrained Pareto.
-- PSL-MORL: arXiv:2501.06773 (2025) — hypernetwork-based Pareto set learning.
+- C-MORL: arXiv:2410.02236 (ICLR 2025) — Stage-1/Stage-2 constrained Pareto. Repo: <https://github.com/RuohLiuq/C-MORL> @ `67473b5`.
+- PSL-MORL: arXiv:2501.06773 (AAAI 2025) — hypernetwork-based Pareto set learning. No public repo as of 2026-05-02.
 - Hayes et al. 2022 — practical guide to MORL planning.
 - COLA 2025 — base method for our COR.
 - Yang 2019 — Envelope SAC base for our critic backup.

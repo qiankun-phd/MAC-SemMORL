@@ -7,7 +7,7 @@ Light-weight setup work compatible with the conference paper deadline. No major 
 - [ ] **P0.1** Lock conference paper at `COLA_v2/paper/main.tex`, submit to GLOBECOM 2026 MWN by 2026-04-01.
 - [ ] **P0.2** Reserve GPU budget (estimate 6 GPUs × 6 weeks for Phase 1 multi-UAV training).
 - [ ] **P0.3** Verify DeepMIMO license + replay infrastructure access.
-- [ ] **P0.4** Survey C-MORL and PSL-MORL public repos; bookmark for porting in Phase 2.
+- [x] **P0.4** Survey C-MORL and PSL-MORL public repos; bookmark for porting in Phase 2.
 - [ ] **P0.5** Multi-UAV environment refactor design doc (`docs/DESIGN-multi-uav.md`).
 
 ## Phase 1 — Multi-UAV + Constrained (2026-08 to 2026-12)
@@ -51,5 +51,7 @@ Triggered by GLOBECOM acceptance/rejection notification.
 |------|-----------|------------|
 | Multi-UAV training compute > budget | Medium | Reduce M from 5 → 3; share OADM encoder. |
 | Theorem 1 fails contraction at γ=0.995 | High | Fall back to expected-contraction or tighter ρ̄ (see SKETCHES.md §2.3). |
-| C-MORL repo not publicly released by 2026-09 | Medium | Re-implement Stage-1/2 from paper algorithm box. |
+| C-MORL repo not publicly released by 2026-09 | **Resolved (2026-05-02)** | Repo found at github.com/RuohLiuq/C-MORL (ICLR 2025) @ 67473b5; no LICENSE file — contact authors before Phase 2. |
+| PSL-MORL repo not publicly released by 2026-09 | Medium | No repo found as of 2026-05-02; re-implement Stage-1/2 from paper §3 algorithm box (+0.5 week vs port; see SKETCHES.md §3.2.1). |
+| C-MORL gym API mismatch (uses gym 0.21, not gymnasium) | Low | Write thin compatibility shim in `environments/` wrapper (0.5 week). |
 | DeepMIMO scenario coverage insufficient | Low | Use synthetic urban-macro fallback. |
