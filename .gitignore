@@ -1,0 +1,84 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+*.egg
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# --- Virtual environments ---
+.venv/
+venv/
+env/
+ENV/
+
+# --- ML artifacts ---
+checkpoints/
+*.pt
+*.pth
+*.ckpt
+*.npz
+*.npy
+wandb/
+mlruns/
+runs/
+outputs/
+results/
+logs/
+
+# --- Hydra ---
+multirun/
+.hydra/
+
+# --- LaTeX ---
+*.aux
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.synctex.gz
+*.toc
+*.lof
+*.lot
+*.dvi
+paper/main.pdf
+
+# --- IDE / OS ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# --- Secrets ---
+.env
+.env.*
+*.key
+*.pem
+credentials.json
+settings.json
+
+# --- Misc ---
+*.swp
+*.bak
+tmp/
+temp/
+scratch/
