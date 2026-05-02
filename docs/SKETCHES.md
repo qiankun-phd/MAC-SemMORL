@@ -156,7 +156,7 @@ In the multi-UAV setting (Task C.1), per-step cost scales as $O(M(d_z K + d_h K)
 
 #### License
 
-No explicit LICENSE file in the repository as of the survey date. TetraRL (ZexinLi0w0/TetraRL) vendors this code under fair use for research purposes and notes it will adopt whatever license the authors specify later. **Action**: contact authors (rliu519@connect.hkust-gz.edu.cn) to confirm permitted use before Phase 2 porting begins.
+No explicit LICENSE file in the repository as of the survey date. TetraRL (ZexinLi0w0/TetraRL) vendors this code under fair use for research purposes and notes it will adopt whatever license the authors specify later. **Action**: Contact the corresponding author listed on the arXiv page (<https://arxiv.org/abs/2410.02236>) or the ICLR OpenReview page (<https://openreview.net/forum?id=fDGPIuCdGi>) to confirm permitted use before Phase 2 porting begins.
 
 #### MuJoCo dependency
 
@@ -174,7 +174,7 @@ Both must coexist in the same conda env (`environment.yml` pins both). This is t
 | Python | 3.8.10 |
 | PyTorch | 2.0.0 + CUDA 11.8 |
 | RL framework | PPO (custom, from PGMORL codebase) |
-| Env interface | `gym == 0.21.0` (original gym API, **not** gymnasium) |
+| Env interface | `gym == 0.21.0` (original gym API; `gymnasium==0.29.1` also installed but not the primary API) |
 | Multi-objective env | `mo-gymnasium == 1.1.0` |
 | Benchmarks used | MO-Hopper-2d/3d, MO-Ant-2d/3d, MO-Humanoid-2d (MuJoCo); Minecart, MO-Lunar-Lander (Box2D); Fruit-Tree (discrete); Building-3d/9d (SustainGym) |
 | Compute | ~2.5M env steps per run; 4 parallel envs; multi-seed |
@@ -202,7 +202,7 @@ Both must coexist in the same conda env (`environment.yml` pins both). This is t
 ### 3.2 PSL-MORL (Pareto Set Learning, 2025)
 
 **Paper**: arXiv:2501.06773  
-**Venue**: arXiv preprint, January 2025  
+**Venue**: AAAI 2025 (Thirty-Ninth AAAI Conference on Artificial Intelligence)  
 **Official repo**: **Not found** — exhaustive GitHub search (2026-05-02) found no public implementation by the paper authors. The analysis file at `memgrafter/analysis` (research notes repo) confirms the paper exists but cites no code URL.  
 **Fallback plan**: Re-implement from paper algorithm box (§3.2.1 below) if no public repo by **2026-09-01**.
 
@@ -313,7 +313,7 @@ These are the points where additional design decisions are needed before coding 
 ## 6. References Used in Sketches
 
 - C-MORL: arXiv:2410.02236 (ICLR 2025) — Stage-1/Stage-2 constrained Pareto. Repo: <https://github.com/RuohLiuq/C-MORL> @ `67473b5`.
-- PSL-MORL: arXiv:2501.06773 (arXiv 2025) — hypernetwork-based Pareto set learning. No public repo as of 2026-05-02.
+- PSL-MORL: arXiv:2501.06773 (AAAI 2025) — hypernetwork-based Pareto set learning. No public repo as of 2026-05-02.
 - Hayes et al. 2022 — practical guide to MORL planning.
 - COLA 2025 — base method for our COR.
 - Yang 2019 — Envelope SAC base for our critic backup.
