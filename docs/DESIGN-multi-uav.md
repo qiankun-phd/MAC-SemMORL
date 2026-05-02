@@ -38,6 +38,8 @@ Companion documents: `docs/SKETCHES.md` §1 (first-cut formulation), `docs/PLAN.
 | Scheduling constraint | implicit | $\sum_{m=1}^M x_{m,k}(t) \leq 1$ for all $k$ (no double-service) |
 | Energy per slot | $E(t)$ | $E_m(t)$ |
 
+*Note: This corrects two dimensional errors in `docs/SKETCHES.md` §1.1 — the kinematics block is `6M` not `2M` (3-D position + 3-D velocity per UAV), and the post-MK block is `2K+1` not `K+1` (AoSI per device adds K, plus the normalised time scalar). SKETCHES.md will be updated in a follow-up PR to align with this canonical formulation.*
+
 Typical experimental settings: $M \in \{2, 4, 5\}$, $K \in \{5, 10, 20\}$.
 
 ---
@@ -389,7 +391,7 @@ Record each decision as an ADR entry in `docs/DECISIONS.md` when resolved.
 
 This design is considered complete and ready for Phase 1 implementation when:
 
-- [x] `docs/DESIGN-multi-uav.md` merged to main.
+- [ ] `docs/DESIGN-multi-uav.md` merged to main.
 - [ ] At least 1 reviewer (advisor / collaborator) has approved the MOMDP formulation in §1.2 and the constraint specifications in §3.
 - [ ] Decision D1 (CTDE vs Federated Latent) resolved and recorded in `docs/DECISIONS.md` by 2026-06-15.
 - [ ] Phase 1 milestone P1.1 backlog created in the project tracker with tasks corresponding to §4 code-change list.
