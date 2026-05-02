@@ -192,7 +192,7 @@ The conference paper is the priority; keep journal extension in design phase onl
 - [ ] Lock conference paper at `main.tex`, finalize Apr 1 submission.
 - [ ] Sketch multi-UAV MOMDP formulation (1-page draft).
 - [x] Identify which C-MORL / PSL-MORL repos to port.
-- [ ] Reserve GPU budget and verify DeepMIMO or alternative channel dataset access.
+- [ ] Reserve GPU budget and verify DeepMIMO or alternative channel dataset access. *(GPU budget ADR drafted - see ADR-0004 in `docs/DECISIONS.md`; booking confirmation pending.)*
 - [ ] Decide single FT vs split between team members.
 
 ---
