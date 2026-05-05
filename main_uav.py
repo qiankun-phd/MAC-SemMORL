@@ -1,0 +1,246 @@
+"""
+Entry point for UAV Semantic Communication experiments with COLA.
+
+Usage:
+    python main_uav.py --seed 1 --cuda
+    python main_uav.py --seed 1 --num_devices 5 --regular_alpha 0.5
+"""
+
+import os
+import numpy as np
+# NumPy 2.0 compat: gym 0.25 references np.bool8 which was removed
+if not hasattr(np, "bool8"):
+    np.bool8 = np.bool_
+
+import torch
+import wandb
+
+os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+cpu_num = 1
+os.environ["OMP_NUM_THREADS"] = str(cpu_num)
+os.environ["OPENBLAS_NUM_THREADS"] = str(cpu_num)
+os.environ["MKL_NUM_THREADS"] = str(cpu_num)
+os.environ["VECLIB_MAXIMUM_THREADS"] = str(cpu_num)
+os.environ["NUMEXPR_NUM_THREADS"] = str(cpu_num)
+torch.set_num_threads(cpu_num)
+
+import argparse
+
+# Python < 3.9 (e.g. conda py3.8): BooleanOptionalAction was added in 3.9
+if not hasattr(argparse, "BooleanOptionalAction"):
+
+    class BooleanOptionalAction(argparse.Action):
+        def __init__(
+            self,
+            option_strings,
+            dest,
+            default=False,
+            type=None,
+            choices=None,
+            required=False,
+            help=None,
+            metavar=None,
+        ):
+            if type is not None or choices is not None:
+                raise ValueError("BooleanOptionalAction does not support type or choices")
+            new_os = []
+            for s in option_strings:
+                new_os.append(s)
+                if s.startswith("--"):
+                    new_os.append("--no-" + s[2:])
+            super().__init__(
+                option_strings=new_os,
+                dest=dest,
+                nargs=0,
+                default=default,
+                required=required,
+                help=help,
+                metavar=metavar,
+            )
+
+        def __call__(self, parser, namespace, values, option_string=None):
+            setattr(namespace, self.dest, not option_string.startswith("--no-"))
+
+    argparse.BooleanOptionalAction = BooleanOptionalAction
+
+import gym
+import numpy as np
+
+from environments import *
+from agent import SacAgent
+
+
+def run():
+    parser = argparse.ArgumentParser(
+        description="COLA-SemCom: Multi-Objective UAV Semantic Communication"
+    )
+
+    # --- environment ---
+    parser.add_argument("--env_id", type=str, default="UAV-SemCom-v0")
+    parser.add_argument("--num_devices", type=int, default=5)
+    parser.add_argument("--area_size", type=float, default=500.0)
+    parser.add_argument("--uav_height", type=float, default=100.0)
+    parser.add_argument("--max_episode_steps", type=int, default=200)
+    parser.add_argument(
+        "--device_mobility",
+        type=str,
+        default="none",
+        choices=["none", "line", "drift"],
+        help="IoT ground devices: none (fixed) | line (slow constant velocity, edge reflect) | drift (small random walk)",
+    )
+    parser.add_argument(
+        "--device_speed",
+        type=float,
+        default=0.0,
+        help="Device speed (m/s) when mobility is on; if 0 and mobility is not none, env uses 0.5 m/s",
+    )
+
+    # --- COLA core ---
+    parser.add_argument("--cuda", action="store_true", default=False)
+    parser.add_argument("--cuda_device", type=int, default=-1)
+    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--num_steps", type=int, default=2000000)
+    parser.add_argument("--batch_size", type=int, default=256)
+    parser.add_argument("--gamma", type=float, default=0.99)
+    parser.add_argument("--ent_coef", type=float, default=0.2)
+    parser.add_argument("--eval_interval", type=int, default=20000)
+
+    # --- latent encoder ---
+    parser.add_argument("--latent_dim", type=int, default=50)
+    parser.add_argument("--use_avg", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--encoder_update_freq", type=int, default=1)
+    parser.add_argument("--use_encoder_hardupdate", action=argparse.BooleanOptionalAction, default=False)
+
+    # --- policy / critic architecture ---
+    parser.add_argument("--Policy_use_latent", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--Policy_use_s", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--Policy_use_w", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--Policy_use_target", action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument("--Critic_use_both", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--Critic_use_s", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--Critic_use_a", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--Use_Policy_Preference", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--Use_Critic_Preference", action=argparse.BooleanOptionalAction, default=True)
+
+    # --- COR (Conflict Objective Regularization) ---
+    parser.add_argument("--regular_alpha", type=float, default=0.5,
+                        help="COR regularization strength")
+    parser.add_argument("--regular_bar", type=float, default=0.25,
+                        help="COR stiffness threshold")
+    parser.add_argument("--consider_other", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--old_Q_update_freq", type=int, default=1)
+
+    # --- misc ---
+    parser.add_argument("--prefer", type=int, default=0)
+    parser.add_argument("--buf_num", type=int, default=0)
+    parser.add_argument("--q_freq", type=int, default=1000)
+    parser.add_argument("--train_with_fixed_preference", action="store_true",
+                        default=True)
+    parser.add_argument("--Use_pc_grad", action="store_true", default=False)
+    parser.add_argument("--step_random", action="store_true", default=False)
+    parser.add_argument("--EA_policy_num", type=int, default=0)
+    parser.add_argument("--RL_policy_num", type=int, default=0)
+    parser.add_argument("--warm_steps", type=int, default=8000000)
+    parser.add_argument("--fixed_weight", type=float, nargs='+', default=None,
+                        help="Fixed preference weight for Weighted Sum SAC")
+    parser.add_argument("--exp_name", type=str, default=None,
+                        help="Experiment name for log directory")
+    parser.add_argument("--model_saved_step", type=int, default=100000,
+                        help="Save model checkpoint every N steps")
+
+    # --- wandb ---
+    parser.add_argument("--wandb_project", type=str, default="COLA-SemCom")
+    parser.add_argument("--wandb_offline", action="store_true", default=False)
+
+    args = parser.parse_args()
+
+    if args.wandb_offline:
+        os.environ["WANDB_MODE"] = "offline"
+
+    env = gym.make(
+        args.env_id,
+        num_devices=args.num_devices,
+        area_size=args.area_size,
+        uav_height=args.uav_height,
+        max_episode_steps=args.max_episode_steps,
+        device_mobility=args.device_mobility,
+        device_speed=args.device_speed,
+    )
+
+    name = (
+        f"COLA-SemCom_dev{args.num_devices}"
+        f"_COR-a{args.regular_alpha}_bar{args.regular_bar}"
+        f"_lat{args.latent_dim}"
+        f"_seed{args.seed}"
+    )
+
+    configs = {
+        "num_steps": args.num_steps,
+        "batch_size": args.batch_size,
+        "lr": 0.0003,
+        "hidden_units": [256, 256],
+        "memory_size": 1e6,
+        "prefer_num": args.prefer,
+        "buf_num": args.buf_num,
+        "gamma": args.gamma,
+        "tau": 0.005,
+        "entropy_tuning": True,
+        "ent_coef": args.ent_coef,
+        "multi_step": 1,
+        "per": False,
+        "alpha": 0.6,
+        "beta": 0.4,
+        "beta_annealing": 0.0001,
+        "grad_clip": None,
+        "updates_per_step": 1,
+        "start_steps": 10000,
+        "log_interval": 10,
+        "target_update_interval": 1,
+        "eval_interval": args.eval_interval,
+        "cuda": args.cuda,
+        "seed": args.seed,
+        "cuda_device": args.cuda_device,
+        "q_frequency": args.q_freq,
+        "model_saved_step": args.model_saved_step,
+        "Use_Policy_Preference": args.Use_Policy_Preference,
+        "Use_Critic_Preference": args.Use_Critic_Preference,
+        "train_with_fixed_preference": args.train_with_fixed_preference,
+        "iso_sigma": 0.005,
+        "line_sigma": 0.05,
+        "EA_policy_num": args.EA_policy_num,
+        "warm_steps": args.warm_steps,
+        "RL_policy_num": args.RL_policy_num,
+        "latent_dim": args.latent_dim,
+        "reward_coef": 1.0,
+        "dynamic_coef": 1.0,
+        "value_coef": 1.0,
+        "Policy_use_latent": args.Policy_use_latent,
+        "Policy_use_s": args.Policy_use_s,
+        "Policy_use_w": args.Policy_use_w,
+        "Critic_use_s": args.Critic_use_s,
+        "Critic_use_a": args.Critic_use_a,
+        "Policy_use_target": args.Policy_use_target,
+        "encoder_update_freq": args.encoder_update_freq,
+        "use_avg": args.use_avg,
+        "Critic_use_both": args.Critic_use_both,
+        "use_encoder_hardupdate": args.use_encoder_hardupdate,
+        "regular_alpha": args.regular_alpha,
+        "Wandb_name": name,
+        "Use_pc_grad": args.Use_pc_grad,
+        "step_random": args.step_random,
+        "old_Q_update_freq": args.old_Q_update_freq,
+        "regular_bar": args.regular_bar,
+        "consider_other": args.consider_other,
+        "fixed_weight": args.fixed_weight,
+    }
+
+    exp_tag = args.exp_name or f"COLA-SemCom-seed{args.seed}_dev{args.num_devices}"
+    log_dir = os.path.join("logs", "uav", exp_tag)
+
+    our_wandb = wandb.init(project=args.wandb_project, name=name, config=configs)
+    agent = SacAgent(env_id=args.env_id, env=env, log_dir=log_dir, **configs)
+    agent.run(our_wandb)
+
+
+if __name__ == "__main__":
+    run()
