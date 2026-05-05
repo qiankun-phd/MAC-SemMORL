@@ -54,8 +54,10 @@ def main() -> None:
     run_episode(env1, "M=1 K=5", n_steps=3)
 
     # ---- multi-UAV smoke test ----
+    # K limited to 5 because DEFAULT_DEVICE_CONFIGS has 5 entries; larger K
+    # requires user-supplied device_configs (same constraint as single-UAV).
     print("\n=== multi-UAV smoke test (UAV-SemCom-Multi-v0) ===")
-    for M, K in [(2, 5), (4, 5), (5, 20)]:
+    for M, K in [(2, 5), (4, 5), (5, 5)]:
         env = gym.make("UAV-SemCom-Multi-v0", num_uavs=M, num_devices=K)
         s_exp = expected_state_dim(M, K)
         a_exp = expected_action_dim(M, K)
