@@ -349,6 +349,20 @@
 \hyphenation{op-tical net-works semi-conduc-tor}
 
 
+% --- packages required by paper/theorem1.tex ---
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsthm}
+\usepackage{bm}
+
+% --- theorem environments shared by paper/theorem1.tex ---
+\newtheorem{theorem}{Theorem}
+\newtheorem{lemma}{Lemma}
+\newtheorem{proposition}{Proposition}
+\newtheorem{assumption}{Assumption}
+\newtheorem{remark}{Remark}
+
+
 \begin{document}
 %
 % paper title
@@ -591,6 +605,10 @@ Subsubsection text here.
 
 
 
+% --- theory section (lives in paper/theorem1.tex) ---
+\input{theorem1}
+
+
 \section{Conclusion}
 The conclusion goes here.
 
@@ -662,9 +680,29 @@ The authors would like to thank...
 % (used to reserve space for the reference number labels box)
 \begin{thebibliography}{1}
 
-\bibitem{IEEEhowto:kopka}
-H.~Kopka and P.~W. Daly, \emph{A Guide to \LaTeX}, 3rd~ed.\hskip 1em plus
-  0.5em minus 0.4em\relax Harlow, England: Addison-Wesley, 1999.
+\bibitem{yang2019envelope}
+R.~Yang, X.~Sun, and K.~Narasimhan, ``A generalized algorithm for
+multi-objective reinforcement learning and policy adaptation,'' in
+\emph{Adv.\ Neural Inf.\ Process.\ Syst.\ (NeurIPS)}, 2019,
+pp.~14\,610--14\,621.
+
+\bibitem{hayes2022survey}
+C.~F. Hayes, R.~R\u{a}dulescu, E.~Bargiacchi, J.~K\"{a}llstr\"{o}m,
+M.~Macfarlane, M.~Reymond, T.~Verstraeten, L.~M. Zintgraf, R.~Dazeley,
+F.~Heintz, E.~Howley, A.~A. Irissappane, P.~Mannion, A.~Now\'{e},
+G.~Ramos, M.~Restelli, P.~Vamplew, and D.~M. Roijers, ``A practical guide
+to multi-objective reinforcement learning and planning,'' \emph{Auton.\
+Agents Multi-Agent Syst.}, vol.~36, no.~1, p.~26, 2022.
+
+\bibitem{bertsekas2019rl}
+D.~P. Bertsekas, \emph{Reinforcement Learning and Optimal Control}.
+Belmont, MA: Athena Scientific, 2019.
+
+\bibitem{agarwal2021policy}
+A.~Agarwal, S.~M. Kakade, J.~D. Lee, and G.~Mahajan, ``On the theory of
+policy gradient methods: Optimality, approximation, and distribution
+shift,'' \emph{J.\ Mach.\ Learn.\ Res.}, vol.~22, no.~98, pp.~1--76,
+2021.
 
 \end{thebibliography}
 
