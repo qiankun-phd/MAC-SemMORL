@@ -98,3 +98,9 @@ register(
     entry_point = 'environments.uav_semcom_env:UAVSemComEnv',
     max_episode_steps=200,
 )
+
+register(
+    id = 'UAV-SemCom-Multi-v0',
+    entry_point = 'environments.uav_semcom_multi_env:MultiUAVSemComEnv',
+    max_episode_steps=200,
+)
