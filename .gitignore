@@ -36,6 +36,7 @@ checkpoints/
 *.ckpt
 *.npz
 *.npy
+!data/*.npy
 wandb/
 mlruns/
 runs/
