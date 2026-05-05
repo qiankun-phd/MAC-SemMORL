@@ -22,8 +22,8 @@
 
 $\mathcal{M} = (\mathcal{S}, \mathcal{A}, P, \mathbf{r}, \gamma)$ where:
 
-- **State**:
-  $\mathbf{s}(t) = \big[\{\mathbf{q}_m, \mathbf{v}_m\}_{m=1}^M, \{\Delta\mathbf{q}_{m,k}, A_k, g_{m,k}\}, \{\tau_k\}, t/T\big] \in \mathbb{R}^{(2M+3MK)+K+1}$.
+- **State** (canonical formulation, see `docs/DESIGN-multi-uav.md` §1.1):
+  $\mathbf{s}(t) = \big[\{\mathbf{q}_m, \mathbf{v}_m\}_{m=1}^M, \{\Delta\mathbf{q}_{m,k}, A_k, g_{m,k}\}, \{\tau_k\}, t/T\big] \in \mathbb{R}^{6M + 3MK + 2K + 1}$ (e.g., $M=5, K=20 \Rightarrow 371$).
 
 - **Action**:
   $\mathbf{a}(t) = \big[\{\boldsymbol{\nu}_m, \mathbf{p}_m, \boldsymbol{\eta}_m, \mathbf{x}_m\}_{m=1}^M\big]$ with per-UAV acceleration, transmit power, compression ratios, and binary scheduling vector $\mathbf{x}_m \in \{0,1\}^K$.
