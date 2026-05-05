@@ -5,7 +5,7 @@
 Light-weight setup work compatible with the conference paper deadline. No major coding commits.
 
 - [ ] **P0.1** Lock conference paper at `COLA_v2/paper/main.tex`, submit to GLOBECOM 2026 MWN by 2026-04-01.
-- [ ] **P0.2** Reserve GPU budget (estimate 6 GPUs × 6 weeks for Phase 1 multi-UAV training).
+- [ ] **P0.2** Reserve GPU budget (estimate 6 GPUs × 6 weeks for Phase 1 multi-UAV training). *(ADR-0004 in `docs/DECISIONS.md` documents wall-clock estimates, server allocation, and fallback plan; booking confirmation pending.)*
 - [ ] **P0.3** Verify DeepMIMO license + replay infrastructure access.
 - [x] **P0.4** Survey C-MORL and PSL-MORL public repos; bookmark for porting in Phase 2.
 - [ ] **P0.5** Multi-UAV environment refactor design doc (`docs/DESIGN-multi-uav.md`).
