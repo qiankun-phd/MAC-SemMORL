@@ -123,3 +123,32 @@ Record the booking confirmation reference here once received:
 See `docs/PLAN.md` §H and `docs/ROADMAP.md` P0.2.
 
 ---
+
+## ADR-0005 — Multi-UAV refactor: per-UAV federated CTDE (DESIGN §4 path)
+
+**Date**: 2026-05-05
+**Status**: Accepted
+
+### Context
+Two viable architectures for the multi-UAV upgrade exist. Joint-action CTDE keeps the existing `SacAgent` untouched (one fat policy outputs `M(4+K)`-dim joint action) at the cost of zero deployment-side decentralisation and limited TWC novelty. Per-UAV federated CTDE follows `docs/DESIGN-multi-uav.md` §4 (M actors, M critics, shared OADM encoder, optional FedAvg sync) — more code, more novelty.
+
+### Decision
+Take the per-UAV federated path. Concretely:
+
+1. **New env class** `MultiUAVSemComEnv` in `environments/uav_semcom_multi_env.py`, registered as `UAV-SemCom-Multi-v0`. Keeps the original `UAVSemComEnv` untouched for backward compatibility with conference reproductions.
+2. **Joint state, joint action interface** at the env layer — flat vectors so it remains a clean `gym.Env`. Agent splits per-UAV slices using `env.num_uavs` attribute.
+3. **New agent class** `MultiAgentSemMORL` in a follow-up PR — wraps M actors + 1 shared OADM encoder + 1 centralized critic (CTDE phase). Optional FedAvg encoder sync added later if M ≥ 4 scaling fails.
+4. **Phase 1.1 pilot**: M=2 with shared encoder, no FedAvg, centralised critic (CTDE Option A from DESIGN §2.1).
+5. **Phase 1.2 fallback**: switch to FedAvg (Option B from DESIGN §2.2) if Decision D1 (deadline 2026-06-15) gate fails.
+
+### Alternatives Considered
+- **Joint-action CTDE**: zero agent.py change but no deployment-side decentralisation, weaker TWC novelty story, and the joint action dim grows as `M(4+K)` which becomes unwieldy at M=5/K=20 (210 dims). Rejected for the journal version; could be revisited as a baseline.
+
+### Consequences
+- ~350 lines of new env code + ~400 lines of new agent code expected.
+- Phase 1 pilot timing target stays 4–6 weeks per `docs/PLAN.md` §C.1.
+- Action space differs from the conference single-UAV case by per-UAV scheduling logits `x_{m,k}` — these are added only when `num_uavs ≥ 2` so the conference numerical reproduction path is unaffected.
+
+See `docs/DESIGN-multi-uav.md` §1, §2, §4 for the full formulation.
+
+---

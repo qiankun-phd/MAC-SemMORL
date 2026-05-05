@@ -78,6 +78,10 @@ def run():
     # --- environment ---
     parser.add_argument("--env_id", type=str, default="UAV-SemCom-v0")
     parser.add_argument("--num_devices", type=int, default=5)
+    parser.add_argument(
+        "--num_uavs", type=int, default=1,
+        help="Number of UAVs. >=2 routes to UAV-SemCom-Multi-v0 + MultiAgentSemMORL.",
+    )
     parser.add_argument("--area_size", type=float, default=500.0)
     parser.add_argument("--uav_height", type=float, default=100.0)
     parser.add_argument("--max_episode_steps", type=int, default=200)
@@ -157,18 +161,35 @@ def run():
     if args.wandb_offline:
         os.environ["WANDB_MODE"] = "offline"
 
-    env = gym.make(
-        args.env_id,
-        num_devices=args.num_devices,
-        area_size=args.area_size,
-        uav_height=args.uav_height,
-        max_episode_steps=args.max_episode_steps,
-        device_mobility=args.device_mobility,
-        device_speed=args.device_speed,
-    )
+    # Multi-UAV routing: M >= 2 forces the multi-UAV env even if --env_id
+    # was left at the default. Single-UAV path stays unchanged.
+    if args.num_uavs >= 2:
+        env_id_used = "UAV-SemCom-Multi-v0"
+        env = gym.make(
+            env_id_used,
+            num_uavs=args.num_uavs,
+            num_devices=args.num_devices,
+            area_size=args.area_size,
+            uav_height=args.uav_height,
+            max_episode_steps=args.max_episode_steps,
+            device_mobility=args.device_mobility,
+            device_speed=args.device_speed,
+        )
+    else:
+        env_id_used = args.env_id
+        env = gym.make(
+            env_id_used,
+            num_devices=args.num_devices,
+            area_size=args.area_size,
+            uav_height=args.uav_height,
+            max_episode_steps=args.max_episode_steps,
+            device_mobility=args.device_mobility,
+            device_speed=args.device_speed,
+        )
 
     name = (
-        f"COLA-SemCom_dev{args.num_devices}"
+        f"{'MAC' if args.num_uavs >= 2 else 'COLA'}-SemMORL"
+        f"_M{args.num_uavs}_dev{args.num_devices}"
         f"_COR-a{args.regular_alpha}_bar{args.regular_bar}"
         f"_lat{args.latent_dim}"
         f"_seed{args.seed}"
@@ -238,7 +259,14 @@ def run():
     log_dir = os.path.join("logs", "uav", exp_tag)
 
     our_wandb = wandb.init(project=args.wandb_project, name=name, config=configs)
-    agent = SacAgent(env_id=args.env_id, env=env, log_dir=log_dir, **configs)
+    if args.num_uavs >= 2:
+        from multi_agent import MultiAgentSemMORL
+        agent = MultiAgentSemMORL(
+            env_id=env_id_used, env=env, log_dir=log_dir,
+            num_uavs=args.num_uavs, num_devices=args.num_devices, **configs,
+        )
+    else:
+        agent = SacAgent(env_id=env_id_used, env=env, log_dir=log_dir, **configs)
     agent.run(our_wandb)
 
 
