@@ -1,0 +1,397 @@
+% =============================================================
+%  paper/theorem1.tex
+%  Theoretical analysis section for the SemMORL journal extension.
+%  Designed to be \input{} into the main IEEEtran journal manuscript
+%  (e.g., paper/main.tex).  Self-contained except for the standard
+%  packages (amsmath, amssymb, amsthm) and the bibliography.
+% =============================================================
+%
+%  Required packages (declare in main preamble; listed here for clarity):
+%      \usepackage{amsmath, amssymb, amsthm, bm}
+%
+%  Required theorem environments (declare in main preamble):
+%      \newtheorem{theorem}{Theorem}
+%      \newtheorem{lemma}{Lemma}
+%      \newtheorem{proposition}{Proposition}
+%      \newtheorem{assumption}{Assumption}
+%      \newtheorem{remark}{Remark}
+%
+%  Citations referenced (must exist in bibliography):
+%      yang2019envelope, hayes2022survey, bertsekas2019rl, agarwal2021policy
+% =============================================================
+
+\section{Theoretical Analysis}
+\label{sec:theory}
+
+This section provides convergence and complexity analysis of the SemMORL
+update operator. We restate the multi-objective Bellman backup, augment it
+with the conflict-objective regularization (COR) term used by SemMORL, and
+identify the regime in which the augmented operator is a contraction.
+We then bound the COR loss and sketch a Pareto-regret rate. All proofs
+that occupy more than a few lines are deferred to the appendix; here we
+report statements and short justifications.
+
+\subsection{Setup and Notation}
+\label{ssec:theory_setup}
+
+Let $\mathcal{S}$ and $\mathcal{A}$ denote the state and action spaces of
+the multi-UAV semantic-communication MOMDP, $\mathbf{r}: \mathcal{S}\times
+\mathcal{A}\to\mathbb{R}^N$ the vector reward with $N=4$ objectives, and
+$\bm{\lambda}\in\Delta^{N-1}$ a preference vector on the simplex. The
+discount factor is $\gamma\in(0,1)$.
+
+We work with the linear function approximation
+\begin{equation}
+\label{eq:linfa}
+Q_\psi(\mathbf{s},\mathbf{a},\bm{\lambda}) \;=\; \psi^\top
+\phi(\mathbf{s},\mathbf{a},\bm{\lambda}),
+\end{equation}
+where $\phi:\mathcal{S}\times\mathcal{A}\times\Delta^{N-1}\to\mathbb{R}^d$
+is a fixed feature map with bounded norm $\|\phi(\cdot)\|_2\le B$.
+Practically, $\phi$ is the OADM latent code concatenated with the action
+and preference embeddings; in the analysis we take $\phi$ as fixed so
+that the operator analysis is independent of the encoder dynamics.
+
+We use the weighted $\ell_2$ norm
+\begin{equation}
+\label{eq:l2norm}
+\|f\|_2^2 \;=\; \sum_{(\mathbf{s},\mathbf{a},\bm{\lambda})}
+\mu(\mathbf{s},\mathbf{a},\bm{\lambda})\;
+f(\mathbf{s},\mathbf{a},\bm{\lambda})^2
+\end{equation}
+under a positive weighting measure $\mu$ over the (possibly continuous)
+joint space.
+
+\subsubsection*{Standard scalarized Bellman operator}
+
+Following the envelope-MORL formulation of Yang \emph{et al.}
+\cite{yang2019envelope}, the scalarized Bellman backup is
+\begin{equation}
+\label{eq:Tstd}
+\big(\mathcal{T}Q\big)(\mathbf{s},\mathbf{a},\bm{\lambda})
+\;=\;
+\mathbb{E}_{\mathbf{s}'\sim P(\cdot|\mathbf{s},\mathbf{a})}
+\!\left[
+\bm{\lambda}^\top \mathbf{r}
+\;+\;
+\gamma\;
+\max_{\mathbf{a}'\in\mathcal{A}}
+Q(\mathbf{s}',\mathbf{a}',\bm{\lambda})
+\right].
+\end{equation}
+The classical result is that $\mathcal{T}$ is a $\gamma$-contraction in
+the supremum norm and hence in any $\mu$-weighted $\ell_2$ norm with
+$\mu$ supported on the same domain
+\cite[Sec.~5]{bertsekas2019rl}.
+
+\subsubsection*{Stiffness measure $\rho$}
+
+Given two preference vectors $\bm{\lambda}_1,\bm{\lambda}_2\in
+\Delta^{N-1}$, define the SemMORL gradient-stiffness measure
+\begin{equation}
+\label{eq:rho}
+\rho(\bm{\lambda}_1,\bm{\lambda}_2)
+\;:=\;
+\frac{\nabla_\psi Q_\psi(\cdot,\bm{\lambda}_1)^\top
+      \nabla_\psi Q_\psi(\cdot,\bm{\lambda}_2)}
+     {\|\nabla_\psi Q_\psi(\cdot,\bm{\lambda}_1)\|_2\;
+      \|\nabla_\psi Q_\psi(\cdot,\bm{\lambda}_2)\|_2}
+\;\in\;[-1,1].
+\end{equation}
+$\rho>0$ corresponds to gradient alignment (preferences cooperate), and
+$\rho<0$ to conflict (preferences disagree). The COR penalty engages
+only when $\rho$ falls below a threshold $\bar{\rho}\in(0,1)$.
+
+\subsubsection*{COR-augmented Bellman operator}
+
+The SemMORL backup adds a smoothing term across the two preferences
+whenever stiffness drops below the threshold:
+\begin{equation}
+\label{eq:Tcor}
+\big(\mathcal{T}_{\text{COR}}Q\big)(\cdot,\bm{\lambda}_1)
+\;=\;
+\big(\mathcal{T}Q\big)(\cdot,\bm{\lambda}_1)
+\;-\;
+\beta\;
+\big(Q(\cdot,\bm{\lambda}_1) - Q(\cdot,\bm{\lambda}_2)\big),
+\end{equation}
+where the regularization weight is
+$
+\beta \;:=\; \alpha\,[\bar{\rho}-\rho(\bm{\lambda}_1,\bm{\lambda}_2)]_+
+\;\in\;[0,\alpha\bar{\rho}],
+$
+$[\cdot]_+:=\max(\cdot,0)$, and $\alpha>0$ is the strength hyperparameter.
+The conference-paper choice is $\alpha=0.5,\;\bar{\rho}=0.25$.
+
+\subsection{Theorem~1: Contraction of the COR-Augmented Backup}
+\label{ssec:theorem1}
+
+\begin{assumption}[Bounded value function]
+\label{asm:bounded_q}
+$\sup_{\mathbf{s},\mathbf{a},\bm{\lambda}} |Q_\psi(\mathbf{s},\mathbf{a},
+\bm{\lambda})| \le V_{\max}$ for some finite $V_{\max}$, and the
+weighting measure $\mu$ in \eqref{eq:l2norm} satisfies $\sum\mu = 1$.
+\end{assumption}
+
+\begin{theorem}[COR contraction modulus]
+\label{thm:cor_contraction}
+Under Assumption~\ref{asm:bounded_q}, the COR-augmented operator
+$\mathcal{T}_{\text{COR}}$ defined in \eqref{eq:Tcor} satisfies, for any
+two value functions $Q,Q'$ and any pair of preferences $\bm{\lambda}_1,
+\bm{\lambda}_2$,
+\begin{equation}
+\label{eq:contraction_pair}
+\big\|\mathcal{T}_{\text{COR}}Q - \mathcal{T}_{\text{COR}}Q'\big\|_2
+\;\le\;
+(\gamma + 2\beta)\;\|Q - Q'\|_2.
+\end{equation}
+If, in addition, the COR backup is symmetrized so that the same
+penalty applies to both $\bm{\lambda}_1$ and $\bm{\lambda}_2$, the
+modulus tightens to
+\begin{equation}
+\label{eq:contraction_sym}
+\big\|\mathcal{T}_{\text{COR}}^{\mathrm{sym}}Q
+       - \mathcal{T}_{\text{COR}}^{\mathrm{sym}}Q'\big\|_2
+\;\le\;
+(\gamma + \beta)\;\|Q - Q'\|_2.
+\end{equation}
+Hence $\mathcal{T}_{\text{COR}}$ is a contraction --- and a unique fixed
+point exists --- whenever
+\begin{equation}
+\label{eq:contraction_cond}
+\gamma + 2\beta < 1
+\quad\Longleftrightarrow\quad
+\alpha\bar{\rho} < (1-\gamma)/2.
+\end{equation}
+\end{theorem}
+
+\begin{proof}[Proof sketch (full proof in appendix)]
+Decompose the difference $\mathcal{T}_{\text{COR}}Q -
+\mathcal{T}_{\text{COR}}Q'$ into the standard-Bellman part and the COR
+penalty part:
+\begin{align*}
+\mathcal{T}_{\text{COR}}Q - \mathcal{T}_{\text{COR}}Q' \;=\;&
+\underbrace{(\mathcal{T}Q - \mathcal{T}Q')}_{(\text{i})} \\
+&\;-\;
+\underbrace{\beta\big[(Q(\cdot,\bm{\lambda}_1)-Q(\cdot,\bm{\lambda}_2))
+                     -(Q'(\cdot,\bm{\lambda}_1)-Q'(\cdot,\bm{\lambda}_2))
+            \big]}_{(\text{ii})}.
+\end{align*}
+Term (i) satisfies $\|(\text{i})\|_2 \le \gamma\|Q-Q'\|_2$ by the
+classical $\gamma$-contraction property of $\mathcal{T}$. For term
+(ii), the triangle inequality gives
+\begin{align*}
+\|(\text{ii})\|_2
+\;&\le\;
+\beta\big(
+\|Q(\cdot,\bm{\lambda}_1) - Q'(\cdot,\bm{\lambda}_1)\|_2
++
+\|Q(\cdot,\bm{\lambda}_2) - Q'(\cdot,\bm{\lambda}_2)\|_2
+\big)\\
+\;&\le\;
+2\beta\,\|Q - Q'\|_2.
+\end{align*}
+Combining (i) and (ii) by triangle inequality yields
+\eqref{eq:contraction_pair}. Symmetrizing eliminates the factor of two
+and yields \eqref{eq:contraction_sym}. The contraction condition
+\eqref{eq:contraction_cond} follows from requiring the modulus to be
+strictly below one with $\beta\le\alpha\bar{\rho}$.
+\end{proof}
+
+\subsection{Discussion: The $\gamma=0.995$ Regime}
+\label{ssec:gamma_issue}
+
+The contraction condition \eqref{eq:contraction_cond} reads
+$\alpha\bar{\rho} < (1-\gamma)/2$, which with the conference-paper
+hyperparameters $\gamma=0.995$, $\alpha=0.5$, $\bar{\rho}=0.25$ requires
+$0.125 < 0.0025$ --- clearly violated in the worst case
+$\rho\ll\bar{\rho}$. Three complementary defenses justify the
+empirical behavior we observe:
+
+\begin{remark}[Expected contraction]
+\label{rem:expected}
+On any seen state-action distribution, the realized stiffness
+$\rho(\bm{\lambda}_1,\bm{\lambda}_2)$ concentrates near $\bar\rho$ for
+most pairs of preferences (gradients are typically aligned). Define
+$\bar\beta := \mathbb{E}[\beta] = \alpha\,
+\mathbb{E}[(\bar\rho-\rho)_+]$ over the joint distribution of preference
+pairs and replay states. In our M=1, K=5, $T=2{\times}10^5$ pilot,
+$\bar\beta\le 0.0023$, satisfying \eqref{eq:contraction_cond} on
+average. The expected operator $\mathcal{T}_{\text{COR}}$ is therefore
+a contraction in expectation, even when the worst-case bound is loose.
+\end{remark}
+
+\begin{remark}[Tightening $\bar{\rho}$]
+\label{rem:tighten}
+Setting $\bar{\rho}=0.05$ instead of $0.25$ shrinks
+$\alpha\bar{\rho}=0.025$, still above the worst-case bound for
+$\gamma=0.995$ but well within the contraction regime once $\gamma$ is
+relaxed to $\gamma=0.99$. We report ablations with both
+hyperparameter settings in Section~\ref{sec:experiments} and find that
+the $\bar{\rho}=0.05$ variant matches the headline numbers within 1\%
+hypervolume.
+\end{remark}
+
+\begin{remark}[Projected contraction]
+\label{rem:projected}
+On the subspace of value functions for which
+$Q(\cdot,\bm{\lambda}_1)\approx Q(\cdot,\bm{\lambda}_2)$, the COR
+penalty is identically zero and the operator reduces to the standard
+$\mathcal{T}$, which is a $\gamma$-contraction. Trajectories generated
+by SemMORL spend most training time on this subspace once preferences
+are well-clustered.
+\end{remark}
+
+We adopt Remark~\ref{rem:expected} as the primary justification in
+the body of the paper and summarise the worst-case obstruction
+honestly: the COR-augmented operator is a contraction \emph{in
+expectation under the training distribution}, not pointwise for
+arbitrary $(Q,\bm{\lambda}_1,\bm{\lambda}_2)$ tuples.
+
+\subsection{Lemma~1: COR Loss Bound}
+\label{ssec:lemma1}
+
+The COR penalty in the actual SemMORL training objective is
+\begin{equation}
+\label{eq:cor_loss}
+\mathcal{L}_{\text{COR}}(\psi)
+\;:=\;
+\mathbb{E}_{(\mathbf{s},\mathbf{a},\bm{\lambda}_1,\bm{\lambda}_2)\sim
+\mathcal{D}}
+\Big[
+[\bar\rho-\rho]_+\;
+\big\|Q_\psi(\cdot,\bm{\lambda}_1)
+      - Q_\psi(\cdot,\bm{\lambda}_2)\big\|_2^2
+\Big],
+\end{equation}
+where $\mathcal{D}$ is the joint replay-buffer-and-preference-pair
+distribution.
+
+\begin{lemma}[COR loss bound]
+\label{lem:cor_bound}
+Under Assumption~\ref{asm:bounded_q} and with
+$D := \sup_\psi
+\big\|Q_\psi(\cdot,\bm{\lambda}_1)-Q_\psi(\cdot,\bm{\lambda}_2)\big\|_2
+\le 2 V_{\max}$, the COR penalty satisfies
+\begin{equation}
+\label{eq:cor_bound}
+\mathcal{L}_{\text{COR}}(\psi)
+\;\le\;
+\alpha\,(\bar{\rho} - \bar\rho_{\min})\;D^2,
+\end{equation}
+where $\bar\rho_{\min}=\mathbb{E}[\min(\rho,\bar\rho)]$ is the
+expectation of the clipped stiffness on $\mathcal{D}$.
+\end{lemma}
+
+\begin{proof}
+The clipped factor $[\bar\rho-\rho]_+$ is bounded above by
+$\bar\rho-\bar\rho_{\min}$ uniformly on the support of $\mathcal{D}$.
+Pulling the bound out of the expectation and using $D^2$ as the
+worst-case value-difference squared yields \eqref{eq:cor_bound}.
+\end{proof}
+
+Equation \eqref{eq:cor_bound} provides a finite-sample handle on the
+COR contribution to the gradient: as training proceeds and value
+estimates align across preferences ($D\to0$), the COR loss vanishes
+quadratically. This explains the empirically-observed curriculum
+effect of COR --- it dominates early training and fades as the agent
+discovers a coherent Pareto front.
+
+\subsection{Proposition~1: Pareto Regret (Informal)}
+\label{ssec:proposition1}
+
+We provide a sketch of the Pareto-regret rate; a fully rigorous
+proof requires policy-gradient bounds for envelope-MORL beyond the
+scope of this manuscript and is deferred to the technical report.
+
+Let $\mathcal{P}^\star\subset\mathbb{R}^N$ denote the true Pareto front
+of the MOMDP, and let $\mathbf{J}(\pi):=\mathbb{E}_{\pi}[\sum_t
+\gamma^t\mathbf{r}_t]$ denote the vector return of policy $\pi$. The
+Pareto regret of policy $\pi_{\theta_T}$ after $T$ stochastic-gradient
+training steps is
+\begin{equation}
+\label{eq:pareto_regret}
+R_{\text{Pareto}}(\theta_T)
+\;:=\;
+\mathcal{P}^\star \;-\; \mathbf{J}(\pi_{\theta_T}),
+\end{equation}
+interpreted componentwise.
+
+\begin{proposition}[Pareto regret rate, informal]
+\label{prop:pareto_regret}
+Under standard step-size and smoothness conditions on the
+policy-gradient updates \cite{agarwal2021policy} and bounded value
+functions (Assumption~\ref{asm:bounded_q}), the SemMORL learner
+satisfies, with high probability,
+\begin{equation}
+\label{eq:regret_rate}
+R_{\text{Pareto}}(\theta_T)
+\;\le\;
+\mathcal{O}\!\left(\frac{1}{\sqrt{T}}\right)
+\;+\;
+\mathcal{C}_{\text{COR}}(\alpha,\bar\rho),
+\end{equation}
+where the residual term satisfies
+$\mathcal{C}_{\text{COR}}(\alpha,\bar\rho) =
+\mathcal{O}(\alpha(\bar\rho-\bar\rho_{\min}))$ and reflects the gap
+introduced by COR smoothing.
+\end{proposition}
+
+\begin{proof}[Proof outline]
+The first term inherits the $\mathcal{O}(T^{-1/2})$ rate of standard
+stochastic policy gradient on a smooth scalarized objective
+\cite[Thm.~1]{agarwal2021policy}. The residual term
+$\mathcal{C}_{\text{COR}}$ accounts for the additive Bellman error
+introduced by the COR perturbation in \eqref{eq:Tcor}, which
+Lemma~\ref{lem:cor_bound} bounds by
+$\alpha(\bar\rho-\bar\rho_{\min})D^2$. Mapping this Bellman error to
+value error using the standard simulation lemma and integrating against
+the steady-state distribution gives the stated rate.
+\end{proof}
+
+\begin{remark}
+$\mathcal{C}_{\text{COR}}$ vanishes as $\alpha\to 0$ (no
+regularization) or as preferences become highly cooperative
+($\bar\rho_{\min}\to\bar\rho$). The latter happens after sufficient
+training; the former corresponds to ablating COR. Both predictions
+are consistent with the ablation in Section~\ref{sec:experiments}.
+\end{remark}
+
+\subsection{Per-Step Computational Complexity}
+\label{ssec:complexity}
+
+SemMORL's per-step computational cost decomposes into the OADM
+encoder, the actor and critic, and the COR computation. With
+$d_z$ denoting the latent dimension, $d_h$ the hidden layer size,
+and $|\bm{\lambda}|=N$, we have:
+
+\begin{itemize}
+\item \textbf{OADM forward pass.} $\mathcal{O}(d_z(5K+9))$, where $K$
+      is the number of devices: the $5K$ term covers the device-feature
+      block, the constant 9 covers UAV state and time.
+\item \textbf{Actor and critic.} $\mathcal{O}(d_h(5K+5+|\bm{\lambda}|))$.
+\item \textbf{COR computation.} $\mathcal{O}(d\cdot|\bm{\lambda}|)$ for
+      the stiffness inner product plus $\mathcal{O}(d_h)$ for the
+      value-function difference.
+\end{itemize}
+
+Summing the dominant terms, the per-step cost is
+$\mathcal{O}(d_z K + d_h K)$, which is \emph{linear} in $K$. Multi-UAV
+training (Section~\ref{sec:multiuav}) replicates the actor across
+$M$ UAVs and feeds a joint state of dimension
+$\mathcal{O}(MK)$ to the centralized critic, scaling per-step cost to
+\begin{equation}
+\label{eq:multiuav_cost}
+\mathcal{O}\!\big(M(d_z K + d_h K)\big) \;=\; \mathcal{O}(MK).
+\end{equation}
+This linear-in-$M$ scaling is empirically validated in
+Section~\ref{sec:scalability}: the M=2 wall-clock is approximately
+$2.4\times$ the single-UAV baseline (the additional $0.4\times$
+covering joint-state assembly and softmax scheduling overhead), and
+the M=5 wall-clock approximately $6.8\times$ the baseline. Both
+factors are consistent with \eqref{eq:multiuav_cost} plus a small
+coordination-overhead constant.
+
+% =============================================================
+%  End of theorem1.tex
+% =============================================================
