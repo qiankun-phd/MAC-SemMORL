@@ -154,12 +154,18 @@ class MultiUAVSemComEnv(gym.Env):
             shape=(self.action_dim,), dtype=np.float32,
         )
 
-        # Reward normalisation helpers (per-UAV upper bound, summed across M)
+        # Reward normalisation helpers — per-UAV bounds, NOT scaled by M.
+        # e_total is the sum of fleet energy this slot. Keeping the bound at a
+        # single UAV's worst case means doubling the fleet (with each UAV at
+        # full effort) drives r3 deeply negative, so the agent has an explicit
+        # incentive to coordinate. Scaling by num_uavs (the previous form)
+        # cancelled M out of the normalised ratio and made fleet cost invisible
+        # — see ADR-0006 for the diagnosis.
         self.max_energy = (
             (self.hover_power + self.move_power_coeff * max_speed ** 2)
             + max_power_per_device * num_devices
-        ) * slot_duration * num_uavs
-        self.min_energy = self.hover_power * slot_duration * num_uavs
+        ) * slot_duration
+        self.min_energy = self.hover_power * slot_duration
 
         # Runtime state
         self.steps = 0

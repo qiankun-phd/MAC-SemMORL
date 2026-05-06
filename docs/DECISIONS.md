@@ -152,3 +152,52 @@ Take the per-UAV federated path. Concretely:
 See `docs/DESIGN-multi-uav.md` §1, §2, §4 for the full formulation.
 
 ---
+
+## ADR-0006 — Fleet-energy reward normalisation (per-UAV bound, fleet sum numerator)
+
+**Date**: 2026-05-06
+**Status**: Accepted
+
+### Context
+The first M=2 pilot at 1M steps showed sum reward within 0.14% of the M=1 conference baseline, which was suspicious. Running `scripts/diagnose_pilot.py` on the final checkpoint with 10 episodes at uniform preference produced:
+
+| metric                    | M=2 pilot         | conference M=1 (Table II) |
+|---------------------------|-------------------|---------------------------|
+| weighted_avg_fidelity     | 0.8583 ± 0.026    | 0.88                      |
+| mean_aosi                 | 1.0273 ± 0.039    | 1.06                      |
+| **energy_per_episode_kJ** | **45.32 ± 1.17**  | **21.96**                 |
+| jain_fairness             | 0.9677 ± 0.019    | 0.98                      |
+| service_rate              | 0.9895 ± 0.020    | 0.99                      |
+
+Both UAVs were operating (energy is correctly ≈ 2× single-UAV), yet the agent's energy reward `r3` looked unchanged from the M=1 baseline. The root cause was the original normalisation in `MultiUAVSemComEnv.__init__`:
+
+```python
+self.max_energy = (...) * slot_duration * num_uavs   # ← scaled by M
+self.min_energy = self.hover_power * slot_duration * num_uavs
+```
+
+`r3` is computed as `(max_energy − e_total − coll_pen) / (max_energy − min_energy)`. With both bounds scaled by `M` and `e_total ≈ M × single_actual`, every factor of `M` cancels out — the normalised ratio is invariant to the swarm size, so the multi-objective agent has **no incentive to coordinate UAVs to reduce fleet energy**. This silently neutralised one of the four objectives the journal extension is supposed to optimise.
+
+### Decision
+Drop the `* num_uavs` factor from both bounds. Keep `max_energy` / `min_energy` as **per-UAV** worst / best case for one slot; let `e_total` (the fleet sum across all M UAVs in the slot) flow through the numerator unscaled.
+
+Effect on the normalised reward:
+- **M=1**: ratio identical to the conference paper (single-UAV baseline preserved bit-exactly).
+- **M=2 each UAV at full effort**: numerator ≈ `(per_uav_max − 2·per_uav_actual)` — drives `r3` deeply negative, penalising duplicated work.
+- **M=2 each UAV at half effort (load-balanced)**: numerator ≈ `(per_uav_max − per_uav_actual_full)` — matches M=1 full-load reward, so coordination is rewarded relative to brute-force duplication.
+
+### Alternatives Considered
+- **Keep fleet-level bounds, raise `regular_alpha` to compensate**: adjusts the optimiser, not the objective. Doesn't fix the underlying signal.
+- **Add a separate "fleet energy" objective r5**: changes the MOMDP from 4-D to 5-D, breaks comparability with the conference paper Pareto front, and asks the OADM encoder to handle a new dimension late in the schedule. Rejected.
+- **Normalise per-UAV inside the agent (move the fix to `multi_agent.py`)**: leaks reward design into the agent and makes the env semantics inconsistent with the single-UAV class. Rejected.
+
+### Consequences
+- Existing M=2 pilot checkpoint (`COLA-SemCom-seed1_dev5`) is invalidated — the policy was trained against the buggy reward and must not be carried forward into Phase 1 results.
+- Re-run M=2 pilot at 1M steps with a distinct `--exp_name` (e.g. `pilot-M2-fixenergy-seed1`) so it doesn't overwrite the conference single-UAV reproduction.
+- `analyze_results.py` baselines for M=4 / M=5 sweeps must use post-fix runs only — flag any pre-fix checkpoint with a `legacy-energy-norm` tag if retained for ablation.
+- The journal experimental section gains a small "ablation on energy normalisation" sidebar — the buggy form is a concrete justification for why fleet-sum vs per-UAV-bound matters and supports the multi-UAV novelty story for TWC.
+- Reward scale for `r3` shifts: under-coordinated fleets see negative `r3` values where the old form returned ≥ 0. Logging dashboards expecting `r3 ≥ 0` need their y-axis range reviewed.
+
+See `scripts/diagnose_pilot.py` (PR #23) for the diagnostic that surfaced this and `environments/uav_semcom_multi_env.py:158` for the fixed code.
+
+---
