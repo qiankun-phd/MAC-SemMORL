@@ -251,3 +251,62 @@ The lower bound `0.5 − 4(M−1)` is the worst case (every UAV at full effort, 
 See `environments/uav_semcom_multi_env.py:337` for the change and the diagnostic table above for the data.
 
 ---
+
+## ADR-0009 — Soft floor `max(-4.0, r_energy)` for M ≥ 3 stability
+
+**Date**: 2026-05-08
+**Status**: Accepted (follow-up to ADR-0008)
+
+### Context
+After ADR-0008 removed the catastrophic 0.5 floor, the M=2 fix-floor pilot at 1M steps converged cleanly (HV 442B, energy 50 ± 4 kJ, AoSI 1.22 ± 0.5). The first M=4 fix-floor pilot at the same protocol was qualitatively different — the diagnostic on `policy_final.pkl`:
+
+| metric                    | M=4 pilot (no floor) | M=2 fix-floor | conference M=1 |
+|---------------------------|----------------------|---------------|----------------|
+| weighted_avg_fidelity     | **0.51 ± 0.09**      | 0.83          | 0.88           |
+| **mean_aosi**             | **29.3 ± 17.9**      | 1.22          | 1.06           |
+| **energy_per_episode_kJ** | **197.7 ± 19.5**     | 50.2          | 22.0           |
+| jain_fairness             | 0.90                 | 0.96          | 0.98           |
+| **service_rate**          | **0.64 ± 0.26**      | 0.97          | 0.99           |
+
+HV at the final eval was **0.0** — every preference sample produced a Pareto point dominated by the [0,0,0,0] reference because `r3 < 0` was driving the entire 4-vector below the reference. AoSI was 27× the conference baseline with a standard deviation of 18 — policy was systematically starving subsets of devices. Energy 9× M=1 indicates all four UAVs were operating near full power with no coordination.
+
+Root cause: under ADR-0008's unbounded form, the multi-UAV r_energy range is `[0.5 − 4(M−1), 4.5]`. For M=2 that's `[−3.5, 4.5]` (size 8.0), comparable to the other rewards' [0.5, 4.5] (size 4.0). For M=4 it's `[−11.5, 4.5]` (size 16.0) — **the energy reward can dominate the other three components by 4× in magnitude**. A few bad slots per episode drive the policy gradient hard toward avoiding any energy use, but the optimisation also has to balance fidelity / freshness / fairness, so the agent oscillates and ultimately converges on a degenerate "spam all UAVs" attractor.
+
+### Decision
+Add a soft floor `r_energy = max(-4.0, r_energy)` after the unfloored computation in `MultiUAVSemComEnv.step`. Single-UAV class is untouched.
+
+Effective per-step ranges:
+
+| M | range size | dominates other rewards by? |
+|---|-----------|----------------------------|
+| 1 | [0.5, 4.5]   = 4.0  | bit-identical to conference (single-UAV class untouched) |
+| 2 | [−3.5, 4.5]  = 8.0  | 2× — bit-identical to ADR-0008 (lower bound never hits −4.0) |
+| 3 | [−4.0, 4.5]  = 8.5  | 2× (was 12.5 / 3.1× before this fix) |
+| 4 | [−4.0, 4.5]  = 8.5  | 2× (was 16.0 / 4× before this fix) |
+| 5 | [−4.0, 4.5]  = 8.5  | 2× (was 20.0 / 5× before this fix) |
+
+Why `−4.0` specifically:
+- Symmetric in magnitude with the upper bound +4.5 (close to but not exactly equal — 4.5 is set to keep `r ≥ 0` for ideal-coordination M=1 case, which would now correspond to `r = 0.5` for M=1 and saturating −4.0 for very-uncoordinated multi-UAV).
+- M=2 lower bound under ADR-0008 is `−3.5`, strictly above `−4.0`, so M=2 sees zero behavioural change. The fix-floor M=2 1M checkpoint remains valid.
+- Per-step penalty −4.0 still gives the agent a strong gradient signal toward coordination (4× the per-step penalty in M=1) without the destabilising 4× dominance over other objectives.
+
+### Alternatives Considered (re-evaluated from the M=4 pilot data)
+- **B. Multiplier rescale `* 4.0 / num_uavs`**: bounds magnitude perfectly (range stays [0.5, 4.5] regardless of M) but partially re-introduces ADR-0006's M-cancellation in *magnitude* — the gradient toward coordination shrinks proportionally. Not a clean fix.
+- **D. 5M-step training**: 25h on the 3080, only 1 GPU available. The instability is in the reward shape, not training duration; more steps would amplify, not fix, the divergent attractor.
+- **E. Curriculum from M=2 warm-start**: actor and critic shapes are M-dependent (action dim grows linearly), so warm-start needs an explicit weight-transfer protocol. Possible but heavy. Re-evaluate after seeing if the soft floor alone is enough.
+- **C. Scale HV reference point with M**: pure measurement fix; would not have helped the M=4 pilot since the underlying policy is broken (AoSI 27×, energy 9×). Reject as standalone fix.
+
+### Consequences
+- M=2 fix-floor checkpoint (`pilot-M2-fixfloor-seed1`) **remains valid** — its training curve never touched the `r_energy < −3.5` region, so the soft floor is dead code for M=2.
+- M=4 fix-floor checkpoint (`pilot-M4-fixfloor-seed1`) **is invalidated** — re-run with `--exp_name pilot-M4-softfloor-seed1` (~5h on long-training server).
+- Reward-design ablation in the paper now has **four** data points instead of three:
+  1. buggy-original (max_energy × M, floor 0.5) — M-cancellation
+  2. ADR-0006 only (no × M, floor 0.5) — dead gradient
+  3. ADR-0008 only (no × M, no floor) — divergent at M ≥ 4
+  4. ADR-0009 (no × M, floor at −4) — current; expect stable across M
+- Theorem 1's `r_max(M)` bound becomes `max(4.5, 4.0)` for M ≥ 3 (i.e., 4.5) — strictly tighter than the post-ADR-0008 form. Update `paper/theorem1.tex` once PR #28 lands so the bound matches the production form.
+- All M=4 / M=5 baseline runs in the journal experiments matrix (DESIGN-baselines.md §2.4) must use post-ADR-0009 code.
+
+See `environments/uav_semcom_multi_env.py:337-356` for the change and the M=4 diagnostic table above for the failure data that motivated the fix.
+
+---
