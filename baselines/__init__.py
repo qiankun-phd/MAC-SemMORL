@@ -59,3 +59,4 @@ from . import noop  # noqa: F401
 from . import mo_ppo  # noqa: F401  -- registers "mo-ppo"
 from . import pareto_pg  # noqa: F401  -- registers "pareto-pg"
 from . import pareto_q  # noqa: F401  -- registers "pareto-q"
+from . import c_morl  # noqa: F401  -- registers "c-morl" (stub)
