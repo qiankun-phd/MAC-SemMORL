@@ -202,6 +202,49 @@ See `scripts/diagnose_pilot.py` (PR #23) for the diagnostic that surfaced this a
 
 ---
 
+## ADR-0007 — Constrained MORL: Lagrangian as default handler
+
+**Date**: 2026-05-07
+**Status**: Accepted
+
+### Context
+Issue #6 (PLAN.md §C.2) calls for moving from a 4-objective unconstrained MORL setup to a *constrained* Pareto problem with three hard SLA constraints (AoSI tail, fleet energy budget, minimum service rate). `docs/DESIGN-constrained.md` lays out three candidate constraint-handling schemes — Lagrangian dual, logarithmic barrier, action-space projection — and the journal acceptance criterion calls for comparing all three on a pilot config.
+
+We need to commit to one as the default-on path so PR-B can ship without waiting for the comparison study (PR-D).
+
+### Decision
+Take **Lagrangian dual** as the default constraint handler. Barrier and projection ship as ablation handlers behind `--constraint_handler {lagrangian,barrier,projection}` in PR-C.
+
+Lagrangian, concretely:
+- Dual variables $\boldsymbol{\lambda} \in \mathbb{R}^3_{\ge 0}$, one per constraint.
+- Inner-loop reward shaping $\tilde{r}(s,a) = \mathbf{w}^\top\mathbf{r} - \boldsymbol{\lambda}^\top \mathbf{c}$, with the scalar penalty spread uniformly across the 4-D reward.
+- Outer-loop dual ascent $\lambda_i \leftarrow \mathrm{clip}(\lambda_i + \alpha_\lambda \cdot \mathrm{EMA}[c_i],\ 0,\ \lambda_{\max})$ at fixed cadence.
+- AoSI-tail constraint rewritten as $\tilde{c}_1 = \mathbb{1}[\max_k A_k > A_{\max}] - \varepsilon$ so the EMA target is the violation rate.
+
+### Alternatives Considered
+- **Barrier**: enforces strict feasibility throughout training but needs an interior-feasible initialisation (the AoSI-tail is hard to guarantee at episode start), and the $\mu$ schedule must shrink over training without numerical instability. Useful as an ablation; not robust enough to be the default.
+- **Projection**: guarantees per-step feasibility but only works for action-level constraints. The AoSI-tail is a trajectory-level event $\Pr_t[\cdot]$ and cannot be enforced by an action projection, so projection alone cannot satisfy the full constraint set. Useful as a degenerate case for the energy budget alone.
+
+### Why Lagrangian wins as default
+- Uniformly handles all three constraint types (action-level, trajectory-level, rate-level).
+- Composes cleanly with the existing COR-augmented Bellman backup. With $\lambda$ held fixed across primal updates, the analysis in `paper/theorem1.tex` applies as-is to the shaped reward $\tilde{r}$; the outer dual update is a separate gradient ascent that converges by standard Lagrangian theory (Bertsekas 2019, Ch. 6).
+- Matches the C-MORL (NeurIPS 2025) positioning anchor — same scheme, our novelty is the integration with semantic-aware OADM/COR.
+
+### Consequences
+- **Default behaviour preserved**: `--use_lagrangian` defaults to `False`. Existing pilots (M=1, M=2 with energy fix, M=4) reproduce bit-identically.
+- **PR-B (this commit, branch `claude/issue-6-lagrangian-impl`)** ships:
+  - `info["max_aosi"]` exposed by both single- and multi-UAV envs.
+  - 11 new CLI flags in `main_uav.py` and `configs` plumbing.
+  - 3 helper methods + 3 hooks in `agent.py:evluate`.
+  - Smoke test in `scripts/smoketest_lagrangian.py` verifying default-off path is bit-identical, that all three constraints fire under tight thresholds, and that the dual loop is alive after warmup.
+- **PR-C** will add barrier and projection variants behind the `--constraint_handler` flag (constructor already validates the choice).
+- **PR-D** will run the three-handler comparison on the M=2 fix-energy pilot config and produce the constraint-violation-vs-HV figure for the journal experiments section.
+- **Theorem 1 extension** (one paragraph on outer-loop Lagrangian convergence) lands with PR-D, not PR-B — PR-B's design captures the issue but the paper change can wait.
+
+See `docs/DESIGN-constrained.md` §2.4 for the full rationale and `scripts/smoketest_lagrangian.py` for the executable behavioural contract.
+
+---
+
 ## ADR-0008 — Drop the `r_energy ≥ 0.5` floor in the multi-UAV env
 
 **Date**: 2026-05-07
