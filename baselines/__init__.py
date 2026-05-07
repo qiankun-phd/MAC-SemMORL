@@ -57,3 +57,5 @@ __all__ = [
 # register itself by importing it here.
 from . import noop  # noqa: F401
 from . import mo_ppo  # noqa: F401  -- registers "mo-ppo"
+from . import pareto_pg  # noqa: F401  -- registers "pareto-pg"
+from . import pareto_q  # noqa: F401  -- registers "pareto-q"
