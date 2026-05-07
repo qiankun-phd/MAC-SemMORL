@@ -201,3 +201,53 @@ Effect on the normalised reward:
 See `scripts/diagnose_pilot.py` (PR #23) for the diagnostic that surfaced this and `environments/uav_semcom_multi_env.py:158` for the fixed code.
 
 ---
+
+## ADR-0008 — Drop the `r_energy ≥ 0.5` floor in the multi-UAV env
+
+**Date**: 2026-05-07
+**Status**: Accepted (follow-up to ADR-0006)
+**Supersedes**: the floor clause in ADR-0006's effect description
+
+### Context
+After ADR-0006 unscaled the energy bounds, the M=2 pilot at 1M steps was diagnosed against `scripts/diagnose_pilot.py`:
+
+| metric                    | pre-ADR-0006 (buggy)  | post-ADR-0006 (this) | conference M=1 |
+|---------------------------|-----------------------|----------------------|----------------|
+| weighted_avg_fidelity     | 0.858 ± 0.026         | 0.803 ± 0.090        | 0.88           |
+| mean_aosi                 | 1.027 ± 0.039         | **4.017 ± 8.80**     | 1.06           |
+| **energy_per_episode_kJ** | **45.32 ± 1.17**      | **77.98 ± 17.33**    | 21.96          |
+| jain_fairness             | 0.968                 | 0.948                | 0.98           |
+| service_rate              | 0.990                 | 0.945                | 0.99           |
+
+Energy got *worse*, not better, after the fix that was supposed to make it visible. The AoSI standard deviation was 8× the post-fix mean — the policy was diverging.
+
+Root cause: the multi-UAV step function inherited a `r_energy = max(0.5, r_energy)` floor from the single-UAV class. In the single-UAV regime, `e_total ≤ max_energy` always (one UAV cannot exceed its own per-step max), so the unfloored ratio is in `[0, 1]` and the floor is redundant — `r_energy ∈ [0.5, 4.5]`.
+
+After ADR-0006, the multi-UAV bounds are per-UAV but `e_total` is a *fleet sum* across all M UAVs. For any swarm running both UAVs at non-trivial effort, `e_total > max_energy` and the unfloored ratio is negative. The 0.5 floor then **clamps `r_energy` to a constant 0.5 across the entire operating regime**, eliminating the gradient on the energy objective. The agent loses the energy signal entirely, so its policy on objective 3 wanders — driving up energy *and* AoSI variance.
+
+### Decision
+Remove the `r_energy = max(0.5, r_energy)` floor from `MultiUAVSemComEnv.step()`. Let `r_energy` go negative when the fleet exceeds the per-UAV worst-case energy bound. Single-UAV class keeps the floor untouched (it never fires there).
+
+Effective range after this fix:
+- **M=1** (`UAVSemComEnv`, untouched): `r_energy ∈ [0.5, 4.5]`, range 4.0.
+- **M=2**: `r_energy ∈ [-3.5, 4.5]`, range 8.0.
+- **M=4**: `r_energy ∈ [-11.5, 4.5]`, range 16.0.
+
+The lower bound `0.5 − 4(M−1)` is the worst case (every UAV at full effort, single-UAV idea of max). In practice the policy will gravitate well above this floor since other reward components (`r_1`, `r_2`, `r_4`) remain in `[0.5, 4.5]` and preference weighting balances the trade-off.
+
+### Alternatives Considered
+- **Rescale by num_uavs in the multiplier** (`* 4.0 / num_uavs`): preserves the magnitude balance with other r_i but partially re-introduces the M-cancellation issue ADR-0006 was meant to fix. Rejected — same fundamental tension as the buggy original form.
+- **Floor at a deeper bound** (e.g., `max(-4*(M-1), r_energy)`): bounds the magnitude but adds a hyperparameter to tune. Rejected for now in favour of the simpler "no floor" form; can revisit in PR-D of Issue #6 if the negative tail destabilises Q-learning.
+- **Add an offset to keep `r_energy ≥ 0`** (e.g., `r_energy + 4*(M-1)`): preserves sign convention but breaks comparability with the conference single-UAV scale. Rejected.
+- **Move the energy term into the constrained-MORL formulation only** (PR-26's Lagrangian path with `c_2`): correct long-term answer, but the unconstrained Pareto baselines (used as comparison points in the journal experiments section) still need a non-degenerate energy reward signal. Need both.
+
+### Consequences
+- **Existing M=2 fix-energy checkpoint (`pilot-M2-fixenergy-seed1`) is invalidated**. The numbers in the diagnosis table above become the "after ADR-0006, before ADR-0008" pre-fix data point, useful for the paper's reward-design ablation.
+- Re-run the M=2 pilot at 1M steps with a fresh `--exp_name` (e.g., `pilot-M2-fixfloor-seed1`).
+- Multi-UAV `r_3` is now signed; logging dashboards and CSV writers must expect `r_3 < 0` rows. The conference single-UAV path is bit-identical.
+- The journal's reward-design ablation now spans **three** points instead of two: buggy-original (`max_energy *= num_uavs`, floor at 0.5), ADR-0006-only (no `* num_uavs`, floor still at 0.5 — the dead-gradient case documented above), and ADR-0008 (current — no floor). The dead-gradient case is itself a useful negative result for the paper.
+- Theorem 1 in `paper/theorem1.tex` needs a one-line update: `‖r‖_∞ ≤ 4.5` should become `‖r‖_∞ ≤ 4.5 + max(0, 4(M−1))` to bound the contraction-coefficient analysis under the new range. Lands with PR-D of Issue #6.
+
+See `environments/uav_semcom_multi_env.py:337` for the change and the diagnostic table above for the data.
+
+---

@@ -334,11 +334,20 @@ class MultiUAVSemComEnv(gym.Env):
 
         r_fidelity = weighted_avg_fid * 4.0 + 0.5
         r_freshness = 4.0 * np.exp(-mean_aosi / 4.0) + 0.5
+        # Multi-UAV r_energy intentionally has no `max(0.5, ...)` floor.
+        # After ADR-0006 the bounds are per-UAV but `e_total` is a fleet sum,
+        # so any swarm running multiple UAVs at non-trivial effort puts the
+        # raw ratio below zero. The conference single-UAV class kept a 0.5
+        # floor because the ratio there is always ≥ 0; copying that floor
+        # into the multi-UAV path saturated r_energy at 0.5 for the entire
+        # operating regime and silently zeroed out the energy gradient (see
+        # ADR-0008). Letting r_energy go negative gives the agent the signal
+        # it needs to coordinate; downstream preference weighting can scale
+        # w_3 if the magnitude grows uncomfortable at large M.
         r_energy = (
             (self.max_energy - e_total - coll_pen)
             / max(self.max_energy - self.min_energy, 1e-6) * 4.0 + 0.5
         )
-        r_energy = max(0.5, r_energy)
         r_fairness = (jain_idx - 1.0 / K) / max(1.0 - 1.0 / K, 1e-10) * 4.0 + 0.5
 
         reward = np.array(
