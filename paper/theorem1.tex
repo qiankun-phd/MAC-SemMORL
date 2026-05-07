@@ -133,6 +133,27 @@ $\sup_{\mathbf{s},\mathbf{a},\bm{\lambda}} |Q_\psi(\mathbf{s},\mathbf{a},
 weighting measure $\mu$ in \eqref{eq:l2norm} satisfies $\sum\mu = 1$.
 \end{assumption}
 
+The single-UAV reward components are bounded in $[0.5, 4.5]$, giving
+$\|\mathbf{r}\|_\infty \le 4.5$ and $V_{\max} \le 4.5/(1-\gamma)$. For the
+multi-UAV variant ($M\ge 2$) the energy reward $r_3$ is signed (no $0.5$
+floor; see the experimental section on the reward-design ablation), so
+$\|\mathbf{r}\|_\infty \le r_{\max}(M)$ with
+\begin{equation}
+\label{eq:rmax_M}
+r_{\max}(M) \;:=\; \max\!\bigl(4.5,\;4(M-1)-0.5\bigr)
+\;=\;
+\begin{cases}
+4.5 & M\in\{1,2\},\\
+4(M-1)-0.5 & M\ge 3,
+\end{cases}
+\end{equation}
+and consequently $V_{\max} \le r_{\max}(M)/(1-\gamma)$.
+Assumption~\ref{asm:bounded_q} thus holds with the same $V_{\max}$ form;
+only the constant rescales with $M$. The contraction analysis below uses
+$V_{\max}$ as a black box, so all results in
+Theorem~\ref{thm:cor_contraction}--\ref{prop:pareto_regret} carry over to
+the multi-UAV setting unchanged in form.
+
 \begin{theorem}[COR contraction modulus]
 \label{thm:cor_contraction}
 Under Assumption~\ref{asm:bounded_q}, the COR-augmented operator
@@ -355,6 +376,102 @@ regularization) or as preferences become highly cooperative
 ($\bar\rho_{\min}\to\bar\rho$). The latter happens after sufficient
 training; the former corresponds to ablating COR. Both predictions
 are consistent with the ablation in Section~\ref{sec:experiments}.
+\end{remark}
+
+\subsection{Lagrangian Outer Loop: Constrained-MORL Convergence}
+\label{ssec:lagrangian_outer}
+
+The journal extension upgrades the unconstrained MOMDP into a constrained
+Pareto problem with three hard SLA constraints (AoSI tail, fleet energy
+budget, minimum service rate; full formulation in
+Section~\ref{sec:constrained}). We show below that the Lagrangian
+treatment of these constraints does not break the convergence story of
+Theorem~\ref{thm:cor_contraction}--Proposition~\ref{prop:pareto_regret};
+it only rescales $V_{\max}$ and adds a standard outer-loop primal-dual
+ascent.
+
+Let $\mathbf{c}:\mathcal{S}\times\mathcal{A}\to\mathbb{R}^I$ collect the
+$I=3$ per-step constraint signals and $\bm{\nu}\in\mathbb{R}_{\ge 0}^I$
+the dual variables. The shaped per-step reward is
+\begin{equation}
+\label{eq:shaped_reward}
+\tilde{\mathbf{r}}(\mathbf{s},\mathbf{a};\bm{\nu})
+\;:=\;
+\mathbf{r}(\mathbf{s},\mathbf{a})
+\;-\;
+\frac{\bm{\nu}^\top \mathbf{c}(\mathbf{s},\mathbf{a})}{N}\,\mathbf{1}_N,
+\end{equation}
+where the scalar penalty $\bm{\nu}^\top\mathbf{c}$ is spread uniformly
+across the $N$ reward components so the critic-network shape is
+preserved. Define the corresponding scalarized backup
+$\mathcal{T}_{\text{COR}}^{(\bm{\nu})}$ by replacing $\mathbf{r}$ with
+$\tilde{\mathbf{r}}$ in \eqref{eq:Tcor}.
+
+\begin{proposition}[Inner loop: contraction under fixed $\bm{\nu}$]
+\label{prop:inner_contraction}
+For any fixed $\bm{\nu}\in\mathbb{R}_{\ge 0}^I$ with
+$\|\bm{\nu}\|_1\le\nu_{\max}$, the operator
+$\mathcal{T}_{\text{COR}}^{(\bm{\nu})}$ satisfies the contraction bound
+of Theorem~\ref{thm:cor_contraction} with the \emph{same} modulus
+$\gamma+2\beta$, and bounded value function
+$V_{\max}^{(\bm{\nu})} \le \bigl(r_{\max}(M)+\nu_{\max}\,c_{\max}\bigr)/(1-\gamma)$,
+where $c_{\max}=\sup_{\mathbf{s},\mathbf{a}}\|\mathbf{c}(\mathbf{s},
+\mathbf{a})\|_\infty$.
+\end{proposition}
+
+\begin{proof}[Proof sketch]
+Holding $\bm{\nu}$ fixed makes $\tilde{\mathbf{r}}$ a stationary
+state-action function. Substituting it for $\mathbf{r}$ in the proof of
+Theorem~\ref{thm:cor_contraction} leaves every step intact: the
+contraction modulus comes from the discount factor and the COR penalty
+term, neither of which involves the reward magnitude. Only $V_{\max}$
+inherits the additive $\nu_{\max}c_{\max}$ contribution from the
+shaped-reward range, hence the stated bound.
+\end{proof}
+
+\begin{proposition}[Outer loop: dual ascent convergence]
+\label{prop:outer_dual}
+Suppose the constrained MOMDP admits a strictly feasible policy (Slater's
+condition). Then the projected dual ascent
+$\bm{\nu}_{k+1}=\Pi_{[0,\nu_{\max}]^I}\bigl(\bm{\nu}_k+
+\eta_k\,\hat{\mathbf{c}}_k\bigr)$, with $\hat{\mathbf{c}}_k$ an unbiased
+estimator of $\mathbb{E}_{\pi_{\bm{\nu}_k}}[\mathbf{c}(\mathbf{s},
+\mathbf{a})]$ and step size $\eta_k=\eta_0/\sqrt{k}$, converges to a
+saddle point of the Lagrangian $\mathcal{L}(\pi,\bm{\nu})=
+\mathbb{E}_\pi[\mathbf{w}^\top\mathbf{r}-\bm{\nu}^\top\mathbf{c}]$ at the
+standard $\mathcal{O}(K^{-1/2})$ rate
+\cite[Sec.~6.4]{bertsekas2019rl}, where $K$ is the number of outer-loop
+updates.
+\end{proposition}
+
+\begin{proof}[Proof sketch]
+Slater's condition guarantees zero duality gap and a bounded primal-dual
+optimal pair. Each inner iteration converges (by
+Proposition~\ref{prop:inner_contraction}) to the unique fixed point of
+$\mathcal{T}_{\text{COR}}^{(\bm{\nu}_k)}$, hence yields an unbiased
+gradient estimate
+$\nabla_{\bm{\nu}}\mathcal{L} = -\mathbb{E}_{\pi_{\bm{\nu}_k}}[\mathbf{c}]$.
+Standard stochastic-subgradient analysis on the dual concave function
+\cite[Sec.~6.4]{bertsekas2019rl} then yields the $\mathcal{O}(K^{-1/2})$
+saddle-point convergence rate. Practical implementations smooth the
+gradient via an exponential moving average to reduce variance; this is
+unbiased for stationary policies and self-corrects under slow policy
+drift.
+\end{proof}
+
+\begin{remark}
+Together, Propositions~\ref{prop:inner_contraction} and
+\ref{prop:outer_dual} extend the Pareto-regret guarantee of
+Proposition~\ref{prop:pareto_regret} to the constrained setting. The
+inner loop preserves the COR contraction with only a $V_{\max}$ rescale;
+the outer loop adds a $\mathcal{O}(K^{-1/2})$ dual-convergence term
+that combines additively with the inner-loop residual
+$\mathcal{C}_{\text{COR}}$. Empirically (Section~\ref{sec:constrained})
+the dual ascent converges within a few hundred outer-loop updates at
+$\eta_0=10^{-3}$, well below the $T^{-1/2}$ inner-loop rate, so the
+constrained-Pareto regret bound is dominated by the same
+$\mathcal{O}(T^{-1/2}+\mathcal{C}_{\text{COR}})$ form as the
+unconstrained case.
 \end{remark}
 
 \subsection{Per-Step Computational Complexity}
