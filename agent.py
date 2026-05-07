@@ -287,7 +287,10 @@ class SacAgent:
                  beta_annealing=0.0001, grad_clip=None, updates_per_step=1,
                  start_steps=10000, log_interval=10, target_update_interval=1,
                  eval_interval=1000, cuda=True, seed=0, cuda_device=0, q_frequency=1000, ref_point =[0.0,-300.0], model_saved_step=100000,Use_Policy_Preference=True, Use_Critic_Preference=True,train_with_fixed_preference=False,
-                 pop_size=5,iso_sigma=0.005,line_sigma=0.05,  EA_policy_num=1, warm_steps=10000, RL_policy_num=1, latent_dim=50, reward_coef = 1.0, dynamic_coef = 1.0, value_coef = 1.0, Policy_use_latent=False, Policy_use_s=False, Policy_use_w = False,Critic_use_s = False, Critic_use_a = False, Policy_use_target=False, encoder_update_freq=1,use_avg=False, Critic_use_both=False, use_encoder_hardupdate=False, regular_alpha=0.1, Wandb_name="_", Use_pc_grad=False, step_random=False, old_Q_update_freq=1, regular_bar=0.0, consider_other=True, fixed_weight=None):
+                 pop_size=5,iso_sigma=0.005,line_sigma=0.05,  EA_policy_num=1, warm_steps=10000, RL_policy_num=1, latent_dim=50, reward_coef = 1.0, dynamic_coef = 1.0, value_coef = 1.0, Policy_use_latent=False, Policy_use_s=False, Policy_use_w = False,Critic_use_s = False, Critic_use_a = False, Policy_use_target=False, encoder_update_freq=1,use_avg=False, Critic_use_both=False, use_encoder_hardupdate=False, regular_alpha=0.1, Wandb_name="_", Use_pc_grad=False, step_random=False, old_Q_update_freq=1, regular_bar=0.0, consider_other=True, fixed_weight=None,
+                 use_lagrangian=False, constraint_handler="lagrangian",
+                 constraint_thresholds=None, lambda_lr=1e-3, lambda_max=100.0,
+                 lambda_init=None, dual_update_every=1000, ema_decay=0.95):
         self.env_id = env_id
         self.fixed_weight = fixed_weight
         self.consider_other = consider_other
@@ -520,6 +523,48 @@ class SacAgent:
         self.insert_pop = 0.0
         self.insert_ep = 0.0
 
+        # ------------------------------------------------------------------
+        # Constrained MORL state (Issue #6, DESIGN-constrained.md §3)
+        # ------------------------------------------------------------------
+        self.use_lagrangian = bool(use_lagrangian)
+        self.constraint_handler = constraint_handler
+        if constraint_handler not in ("lagrangian", "barrier", "projection"):
+            raise ValueError(f"unknown constraint_handler={constraint_handler}")
+        if constraint_handler != "lagrangian" and self.use_lagrangian:
+            # PR-B ships only the Lagrangian path; barrier / projection land in PR-C
+            raise NotImplementedError(
+                f"constraint_handler={constraint_handler} not yet implemented; "
+                "use 'lagrangian' (PR-B) or wait for PR-C"
+            )
+
+        thr = constraint_thresholds or {}
+        self.A_max = float(thr.get("A_max", 3.0))
+        self.epsilon_aosi = float(thr.get("epsilon_aosi", 0.05))
+        # E_total budget is per-fleet for the whole episode (kJ → J).
+        # Multi-UAV envs use M*25 kJ default; agents inherit whatever the caller
+        # passes via `E_total_kJ`. The per-step budget is what the dual update sees.
+        E_total_kJ = float(thr.get("E_total_kJ", 30.0))
+        self.E_total_per_step = (E_total_kJ * 1000.0) / max(
+            getattr(self.env, "max_episode_steps", 200), 1
+        )
+        self.rho_min = float(thr.get("rho_min", 0.7))
+        self.svc_window_size = int(thr.get("service_window", 20))
+
+        if lambda_init is None:
+            lambda_init = [0.0, 0.0, 0.0]
+        self.lambdas = np.array(lambda_init, dtype=np.float64)
+        self.lambdas = np.clip(self.lambdas, 0.0, lambda_max)
+        self.ema_costs = np.zeros(3, dtype=np.float64)
+        self.lambda_lr = float(lambda_lr)
+        self.lambda_max = float(lambda_max)
+        self.dual_update_every = int(dual_update_every)
+        self.ema_decay = float(ema_decay)
+        # Sliding window of last W per-slot service indicators (1 = served, 0 = idle).
+        # Used to compute the rolling worst-device service rate for c_3.
+        from collections import deque as _deque
+        self.svc_window = _deque(maxlen=self.svc_window_size)
+        self._last_dual_update_step = 0
+
 
     def get_pref(self):
 
@@ -565,18 +610,93 @@ class SacAgent:
             self.steps >= self.start_steps
 
 
+    def _compute_step_costs(self, info):
+        """Per-slot constraint violation magnitudes — see DESIGN-constrained.md §3.2.
+
+        Returns 3-vector (c1, c2, c3) where each entry is the *signed* violation
+        (positive when constraint is violated, negative or zero when satisfied).
+        For c1 we use the rewritten form `1[max_aosi > A_max] - epsilon` so the
+        EMA target is a violation rate that the dual update drives towards
+        epsilon.
+        """
+        if not self.use_lagrangian or info is None:
+            return None
+        max_aosi = float(info.get("max_aosi", 0.0))
+        energy_step = float(info.get("energy", 0.0))
+        served = int(info.get("service_rate", 0.0) > 0.5)
+        self.svc_window.append(served)
+        rho_window = (
+            float(np.mean(self.svc_window)) if len(self.svc_window) > 0 else 0.0
+        )
+        c1 = float(max_aosi > self.A_max) - self.epsilon_aosi
+        c2 = energy_step - self.E_total_per_step
+        c3 = self.rho_min - rho_window
+        return np.array([c1, c2, c3], dtype=np.float64)
+
+    def _shape_reward_lagrangian(self, reward, c_step):
+        """Subtract λ·c uniformly across the 4-D reward.
+
+        The reward vector is 4-D (Fid, AoSI, Energy, Jain) but constraints are
+        cross-cutting (3-D). Spread the scalar penalty uniformly so the COR
+        and Q-network shapes stay unchanged. See DESIGN-constrained.md §3.3
+        point 1.
+        """
+        if c_step is None:
+            return reward
+        penalty_scalar = float(np.dot(self.lambdas, c_step))
+        per_obj = penalty_scalar / max(self.env.reward_num, 1)
+        return (reward.astype(np.float32) - per_obj).astype(np.float32)
+
+    def _maybe_update_duals(self):
+        """Outer-loop dual ascent: λ ← clip(λ + α·EMA[c], 0, λ_max).
+
+        Called at fixed cadence from `evluate`. No-op until past warmup so the
+        random-action exploration phase doesn't drive λ off zero before the
+        primal has even started learning.
+        """
+        if not self.use_lagrangian:
+            return
+        if self.steps < self.start_steps:
+            return
+        if (self.steps - self._last_dual_update_step) < self.dual_update_every:
+            return
+        self.lambdas = np.clip(
+            self.lambdas + self.lambda_lr * self.ema_costs, 0.0, self.lambda_max
+        )
+        self._last_dual_update_step = self.steps
+        if hasattr(self, "our_wandb") and self.our_wandb is not None:
+            try:
+                self.our_wandb.log(
+                    {
+                        "lagrangian/lambda_aosi_tail": float(self.lambdas[0]),
+                        "lagrangian/lambda_energy_budget": float(self.lambdas[1]),
+                        "lagrangian/lambda_service_rate": float(self.lambdas[2]),
+                        "lagrangian/ema_c_aosi_tail": float(self.ema_costs[0]),
+                        "lagrangian/ema_c_energy_budget": float(self.ema_costs[1]),
+                        "lagrangian/ema_c_service_rate": float(self.ema_costs[2]),
+                        "step": int(self.steps),
+                    }
+                )
+            except Exception:
+                # Wandb logging is best-effort — never crash training because of it.
+                pass
+
     def evluate(self, preference, policy, RL_agent=False):
 
         episode_steps = 0
         state = self.env.reset()
         done = False
         episode_reward = 0.
+        # Reset rolling service window at episode start so c_3 doesn't leak
+        # service indicators across episodes (window is causal within episode).
+        if self.use_lagrangian:
+            self.svc_window.clear()
         # Sample preference from prefernence space
         while not done:
             ## Just fixed
             if self.start_steps > self.steps:
                 action = self.env.action_space.sample()
-                next_state, reward, done, _ = self.env.step(action)
+                next_state, reward, done, info = self.env.step(action)
             else:
                 tp_state = torch.FloatTensor(state).unsqueeze(0).to(self.device)
                 tp_preference = torch.FloatTensor(preference).unsqueeze(0).to(self.device)
@@ -605,7 +725,20 @@ class SacAgent:
                 action =action.cpu().numpy().reshape(-1)
 
                 # action = self.act(state)
-                next_state, reward, done, _ = self.env.step(action * self.max_action)
+                next_state, reward, done, info = self.env.step(action * self.max_action)
+
+            # Constrained MORL hooks (no-op when use_lagrangian=False).
+            shaped_reward = reward
+            if self.use_lagrangian:
+                c_step = self._compute_step_costs(info)
+                if c_step is not None:
+                    self.ema_costs = (
+                        self.ema_decay * self.ema_costs
+                        + (1.0 - self.ema_decay) * c_step
+                    )
+                    shaped_reward = self._shape_reward_lagrangian(reward, c_step)
+                self._maybe_update_duals()
+
             self.steps += 1
             episode_steps += 1
             episode_reward += reward
@@ -622,7 +755,7 @@ class SacAgent:
 
             #print(np.array(state).shape, preference, action,reward,masked_done, done )
             self.memory.append(
-                state, preference, action, reward, next_state, masked_done,
+                state, preference, action, shaped_reward, next_state, masked_done,
                 episode_done=done)
             # self.big_memory.append(
             #     state, preference, action, reward, next_state, masked_done,

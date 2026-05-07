@@ -159,6 +159,33 @@ def run():
     parser.add_argument("--model_saved_step", type=int, default=100000,
                         help="Save model checkpoint every N steps")
 
+    # --- Constrained MORL (Issue #6, DESIGN-constrained.md) ---
+    # All defaults keep use_lagrangian=False so existing pilots stay bit-identical.
+    parser.add_argument("--use_lagrangian", action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument("--constraint_handler", type=str, default="lagrangian",
+                        choices=["lagrangian", "barrier", "projection"],
+                        help="Constraint-handling scheme. PR-B ships only 'lagrangian'.")
+    parser.add_argument("--A_max", type=float, default=3.0,
+                        help="AoSI tail bound: P[max_k A_k > A_max] <= epsilon_aosi")
+    parser.add_argument("--epsilon_aosi", type=float, default=0.05,
+                        help="Allowed tail-violation rate for c_1")
+    parser.add_argument("--E_total_kJ", type=float, default=30.0,
+                        help="Per-episode fleet energy budget in kJ. Caller scales for M>=2 if desired.")
+    parser.add_argument("--rho_min", type=float, default=0.7,
+                        help="Minimum service rate floor (rolling window) for c_3")
+    parser.add_argument("--service_window", type=int, default=20,
+                        help="Sliding-window length (slots) for c_3 estimate")
+    parser.add_argument("--lambda_lr", type=float, default=1e-3,
+                        help="Dual ascent learning rate alpha_lambda")
+    parser.add_argument("--lambda_max", type=float, default=100.0,
+                        help="Cap on each lambda_i to prevent runaway")
+    parser.add_argument("--lambda_init", type=float, nargs=3, default=[0.0, 0.0, 0.0],
+                        help="Initial dual variables (3-vector: aosi_tail, energy_budget, service_rate)")
+    parser.add_argument("--dual_update_every", type=int, default=1000,
+                        help="Env steps between outer-loop dual updates")
+    parser.add_argument("--ema_decay", type=float, default=0.95,
+                        help="EMA decay beta for cost smoothing in dual update")
+
     # --- wandb ---
     parser.add_argument("--wandb_project", type=str, default="COLA-SemCom")
     parser.add_argument("--wandb_offline", action="store_true", default=False)
@@ -260,6 +287,20 @@ def run():
         "regular_bar": args.regular_bar,
         "consider_other": args.consider_other,
         "fixed_weight": args.fixed_weight,
+        "use_lagrangian": args.use_lagrangian,
+        "constraint_handler": args.constraint_handler,
+        "constraint_thresholds": {
+            "A_max": args.A_max,
+            "epsilon_aosi": args.epsilon_aosi,
+            "E_total_kJ": args.E_total_kJ,
+            "rho_min": args.rho_min,
+            "service_window": args.service_window,
+        },
+        "lambda_lr": args.lambda_lr,
+        "lambda_max": args.lambda_max,
+        "lambda_init": args.lambda_init,
+        "dual_update_every": args.dual_update_every,
+        "ema_decay": args.ema_decay,
     }
 
     exp_tag = args.exp_name or f"COLA-SemCom-seed{args.seed}_dev{args.num_devices}"
