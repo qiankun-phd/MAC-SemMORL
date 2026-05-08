@@ -390,3 +390,53 @@ But first: run the experiment and look at the data.
 See `environments/uav_semcom_multi_env.py:337-378` for the change.
 
 ---
+
+## ADR-0011 — M=4 climb-then-collapse: structural, not reward / entropy
+
+**Date**: 2026-05-08
+**Status**: Open — investigation paused, next experiment specified, no code change
+
+### Context
+ADR-0010 was meant to stabilise M=4 training with multiplier rescale + soft floor. It did not. Two more attempts followed:
+
+| # | Config | Peak HV @ 180K | End-state HV | mean r3 peak | Outcome |
+|---|--------|----------------|--------------|--------------|---------|
+| 1 | ADR-0008 unbounded reward | ~50 GB | 0 (1M FINAL) | -873 | divergent |
+| 2 | ADR-0009 soft floor at -4.0 | **204 GB** | 0 (killed 360K) | -168 | climb then collapse |
+| 3 | ADR-0010 rescale + floor | 125 GB | ~22 GB (killed 720K) | **+198** | climb then collapse |
+| 4 | Fixed `ent_coef=0.05`, no-tune | 82 GB | 2 GB (killed 220K) | -27 | climb then collapse |
+
+All four show the **same shape**: HV climbs to a peak around step 180K, then collapses back near zero by 200-300K and never recovers. Mean r3 follows the same shape.
+
+### What is ruled out
+- **Reward magnitude / floor / range** — bounded successively in attempts #1 → #3, problem persists.
+- **SAC entropy bonus** — fixed `ent_coef=0.05` with `--no-entropy_tuning` (attempt #4) collapsed in the **fastest** time of any attempt (already at 2 GB by step 220K). Less exploration did not help; if anything, worse.
+- **Action range scaling with M** — multiplier rescale in #3 brought per-step magnitude in line with M=1 and the issue persisted.
+
+### What is suspected (untested)
+1. **COR loss over-smoothing the critic at large M.** With M=4, every preference change forces a 68-dim joint action change; cross-preference Q-differences blow up; COR penalty (`αρ̄=0.125` per Theorem 1) wants them small. Critic may end up flat. **Cheap to test:** `--regular_alpha 0.1` (5× weaker COR) for one M=4 pilot, ~5h.
+2. **Joint 68-dim action sample inefficiency.** Standard SAC with replay 1M and `updates_per_step=1` may be sample-starved at this dim. **Treatment:** curriculum warm-start from `pilot-M2-fixfloor-seed1` final checkpoint, or split joint actor into per-UAV heads (true CTDE per ADR-0005 §4 step 4). ~1 week of architecture work either way.
+3. **`regular_alpha=0.5` too strong at large M (Theorem 1 contraction).** The COR contraction modulus is `γ + 2αρ̄`. At M=4 the 68-dim joint action makes per-preference `ρ` collapse, β grows, contraction breaks. M=2 stays trainable because `ρ` stays high there. This is **the same root cause as #1**, viewed through the theory lens.
+
+### Decision
+**Investigation paused.** Do not launch another M=4 pilot until lowering `regular_alpha` has been tried — that is the single cheapest unexplored knob and the most theoretically motivated suspect.
+
+Next-session order of work (commit to this order before re-launching anything):
+1. Run M=4 with `--regular_alpha 0.1` (one pilot, 5h). If converges → set as M ≥ 4 default; close the investigation with an ADR-0012.
+2. If `--regular_alpha 0.1` also collapses, run `--regular_alpha 0.0` to confirm COR is the culprit. If even α=0 collapses → it's not COR; escalate.
+3. If COR ruled out, implement curriculum from `pilot-M2-fixfloor-seed1`. Architectural work (~1 week).
+
+### Consequences
+- **No code change in this PR.** Records the failure data, the prior, and the planned next step so a future session does not re-litigate the four attempts.
+- **M=2 baseline stays the only valid Phase-1 multi-UAV result** (`pilot-M2-fixfloor-seed1`, HV 442 GB). M=4 / M=5 rows in DESIGN-baselines.md §2.4 are blocked until ADR-0012 lands.
+- All four failed M=4 checkpoints retained as ablation-table data points for the paper, even though none are usable as a deployable policy:
+    - `pilot-M4-fixfloor-seed1` (ADR-0008)
+    - `pilot-M4-softfloor-seed1/policy_3.pkl` (ADR-0009)
+    - `pilot-M4-rescaled-seed1/policy_7.pkl` (ADR-0010)
+    - `pilot-M4-fixedalpha-seed1/policy_2.pkl` (fixed-α)
+- Total compute spent on this investigation today: ~16 GPU-hours.
+
+### Note for the next session
+Memory file `m4_pilot_instability.md` has the full failure-pattern data + checkpoint inventory. **Read it before launching any M=4 work.**
+
+---
