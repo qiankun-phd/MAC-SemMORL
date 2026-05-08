@@ -56,3 +56,4 @@ __all__ = [
 # without any further setup. Each external baseline added in a later PR will
 # register itself by importing it here.
 from . import noop  # noqa: F401
+from . import mo_ppo  # noqa: F401  -- registers "mo-ppo"
