@@ -106,7 +106,14 @@ def run():
     parser.add_argument("--num_steps", type=int, default=2000000)
     parser.add_argument("--batch_size", type=int, default=256)
     parser.add_argument("--gamma", type=float, default=0.99)
-    parser.add_argument("--ent_coef", type=float, default=0.2)
+    parser.add_argument("--ent_coef", type=float, default=0.2,
+                        help="SAC entropy coefficient. Used as fixed alpha when "
+                             "--no-entropy_tuning, else as the initial alpha.")
+    parser.add_argument(
+        "--entropy_tuning", action=argparse.BooleanOptionalAction, default=True,
+        help="Auto-tune SAC entropy alpha to target -|A|. Disable with "
+             "--no-entropy_tuning to use a fixed --ent_coef (lower alpha "
+             "stabilises large-M training where target -|A| over-explores).")
     parser.add_argument("--eval_interval", type=int, default=20000)
 
     # --- latent encoder ---
@@ -205,7 +212,7 @@ def run():
         "buf_num": args.buf_num,
         "gamma": args.gamma,
         "tau": 0.005,
-        "entropy_tuning": True,
+        "entropy_tuning": args.entropy_tuning,
         "ent_coef": args.ent_coef,
         "multi_step": 1,
         "per": False,
