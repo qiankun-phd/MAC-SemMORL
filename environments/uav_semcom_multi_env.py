@@ -334,24 +334,38 @@ class MultiUAVSemComEnv(gym.Env):
 
         r_fidelity = weighted_avg_fid * 4.0 + 0.5
         r_freshness = 4.0 * np.exp(-mean_aosi / 4.0) + 0.5
-        # Multi-UAV r_energy uses a soft floor at -4.0 (ADR-0009).
-        # The unfloored form (ADR-0008) restored the energy gradient that
-        # ADR-0006 had silently destroyed, but the resulting reward range
-        # `[0.5 − 4(M−1), 4.5]` is too wide for M ≥ 4: the M=4 1M-step pilot
-        # produced HV = 0 at the final eval, AoSI 27× the M=1 baseline, and
-        # energy 9× the M=1 baseline — the agent converged on an "all UAVs
-        # at full power" policy because the per-step penalty for excess
-        # energy can swing to −11.5 vs other rewards at most 4.5, so a few
-        # bad slots dominate the gradient.
-        # Floor at −4.0: bounds magnitude to ~the same order as the upper
-        # range (4.5) so a single bad slot cannot drown out the other
-        # objectives, while preserving a 4.5 → −4.0 gradient range — wider
-        # than single-UAV [0.5, 4.5] but bounded. M=2's natural lower bound
-        # is −3.5, so M=2 behaviour is bit-identical to ADR-0008. Only
-        # M ≥ 3 sees the new floor fire.
+        # Multi-UAV r_energy uses a multiplier rescaled by num_uavs plus a
+        # safety soft floor at -4.0 (ADR-0010). Combination of two fixes:
+        #
+        # 1. Multiplier rescale `* 4.0 / num_uavs`: keeps the per-step
+        #    reward magnitude comparable to the single-UAV case across all
+        #    M. Per-step ranges are now:
+        #        M=1: [0.5, 4.5]   bit-identical to conference single-UAV
+        #        M=2: [-1.5, 2.5]
+        #        M=4: [-2.5, 1.5]
+        #        M=5: [-2.7, 1.3]
+        #    The gradient toward coordination is preserved (M=4 difference
+        #    between fully-coordinated and fully-wasteful policies is 3.0
+        #    per step, vs the buggy ADR-0006 form's 0). It is weaker than
+        #    ADR-0008 (which was 12.0 per step at M=4) — that strength
+        #    turned out to overpower the other three reward components and
+        #    drive policy collapse (M=4 ADR-0008 pilot final HV=0).
+        #
+        # 2. Soft floor at -4.0: safety cap. Under the rescale alone the
+        #    M=4 worst case is -2.5 and M=5 is -2.7, so the floor is dead
+        #    code in expected operating regimes — it only kicks in if a
+        #    coll_pen or future env extension drives r_energy abnormally
+        #    negative. Preserved from ADR-0009 to keep the bound visible
+        #    and to defend against future reward additions.
+        #
+        # ADR-0009's floor-only fix proved insufficient: the M=4 pilot
+        # under that form ran HV up to 204B at 180K but then collapsed
+        # back to 0 by 360K — agent slipped into a degenerate attractor
+        # the floor could not prevent because the unrescaled magnitude
+        # still overpowered the other objectives.
         r_energy = (
             (self.max_energy - e_total - coll_pen)
-            / max(self.max_energy - self.min_energy, 1e-6) * 4.0 + 0.5
+            / max(self.max_energy - self.min_energy, 1e-6) * (4.0 / self.num_uavs) + 0.5
         )
         r_energy = max(-4.0, r_energy)
         r_fairness = (jain_idx - 1.0 / K) / max(1.0 - 1.0 / K, 1e-10) * 4.0 + 0.5

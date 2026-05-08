@@ -310,3 +310,83 @@ Why `−4.0` specifically:
 See `environments/uav_semcom_multi_env.py:337-356` for the change and the M=4 diagnostic table above for the failure data that motivated the fix.
 
 ---
+
+## ADR-0010 — Multiplier rescale `* 4.0 / num_uavs` + soft floor (supersedes ADR-0009)
+
+**Date**: 2026-05-08
+**Status**: Accepted (supersedes ADR-0009 partially — soft floor remains; magnitude rescale added)
+
+### Context
+The M=4 pilot under ADR-0009 (soft floor at -4.0, no rescale) was killed at step 360K after observing classic policy collapse:
+
+| step | HV | mean r3 |
+|------|-------|---------|
+| 100K | 127 GB | -321 |
+| 180K | **204 GB** (peak) | -168 |
+| 240K | 157 GB | -470 |
+| 280K | 38 GB | -739 |
+| 300K | 0.4 GB | -692 |
+| 340K | 0 GB | -781 |
+| 360K | 0 GB | -757 |
+
+The agent climbed to a usable Pareto front by 180K, then progressively lost it as SAC's entropy bonus drove exploration into a degenerate "uncoordinated swarm" attractor. ADR-0009's soft floor at -4.0 capped the *worst-case* reward but did not reduce the *gradient strength* — the M=4 raw multiplier `* 4.0` produces per-step penalties up to -11.5 (or -4.0 after floor), still ~2× the magnitude of any other reward component, which is enough to push the policy gradient off-balance once entropy decays.
+
+Diagnosis reframed: the issue is not just the magnitude of the lower bound; it's the **gradient strength of the energy term relative to the other three rewards**. ADR-0009 addressed magnitude; ADR-0010 addresses gradient strength.
+
+### Decision
+Combine two fixes:
+
+1. **Multiplier rescale `* 4.0 / num_uavs`**: keeps the per-step reward range comparable to single-UAV across all M.
+2. **Keep the soft floor at -4.0** (ADR-0009): safety cap in case future env extensions or `coll_pen` push r_energy outside the rescaled range.
+
+```python
+r_energy = (
+    (self.max_energy - e_total - coll_pen)
+    / max(self.max_energy - self.min_energy, 1e-6) * (4.0 / self.num_uavs) + 0.5
+)
+r_energy = max(-4.0, r_energy)
+```
+
+Per-step ranges and coordination-gradient strength:
+
+| M | range | range size | coord. gradient (full vs coord) |
+|---|-------|-----------|-----|
+| 1 | [0.5, 4.5] | 4.0 | N/A (single-UAV class untouched) |
+| 2 | [-1.5, 2.5] | 4.0 | 2.0 per step |
+| 3 | [-2.2, 1.8] | 4.0 | 2.7 per step |
+| 4 | [-2.5, 1.5] | 4.0 | 3.0 per step |
+| 5 | [-2.7, 1.3] | 4.0 | 3.2 per step |
+
+vs ADR-0008/0009 strength at M=4: 12.0 per step (4× too strong). vs buggy ADR-0006: 0 per step (M cancelled). ADR-0010 is the goldilocks middle.
+
+The soft floor at -4.0 is now dead code in expected operating regimes (M=4 worst case is -2.5, M=5 is -2.7). Kept as a safety net for future env extensions (e.g., `coll_pen` could push r_energy below -3.0 when many UAVs collide).
+
+### Alternatives Considered (all from ADR-0009 retrospective)
+- **A. Lower the soft floor below -4.0**: would not fix the underlying gradient-strength imbalance.
+- **C. Make ADR-0010 conditional (only rescale when M ≥ 3)**: keeps M=2 bit-identical to ADR-0009 but introduces a discontinuity at M=3. Rejected for cleanliness.
+- **D. 5M-step training under ADR-0009**: doesn't fix the attractor; expensive.
+- **E. Curriculum from M=2**: still a possibility if ADR-0010 is also insufficient; defer.
+
+### Consequences
+- **M=2 fix-floor checkpoint (`pilot-M2-fixfloor-seed1`) is no longer bit-identical** to ADR-0010 — the multiplier is now 2.0 instead of 4.0 for M=2. The old M=2 checkpoint becomes the "ADR-0009 / ADR-0008 reference" data point in the reward-design ablation.
+- **Re-run M=2 under ADR-0010** with `--exp_name pilot-M2-rescaled-seed1`. Expect HV similar to the ~442B fix-floor result; possibly higher because the gradient is now better-balanced with other rewards.
+- **Re-run M=4 under ADR-0010** with `--exp_name pilot-M4-rescaled-seed1`. Expect stable HV ≥ 100B at the final eval.
+- **M=4 ADR-0009 360K checkpoint preserved** (`pilot-M4-softfloor-seed1/checkpoints/policy_3.pkl`) as the ablation data point #5.
+- The reward-design ablation in the paper now spans **five** points:
+  1. buggy-original (× M, floor 0.5) — M-cancellation
+  2. ADR-0006 only (no × M, floor 0.5) — dead gradient
+  3. ADR-0008 only (no × M, no floor) — divergent at M ≥ 4
+  4. ADR-0009 (no × M, floor at -4) — late-training collapse at M=4
+  5. ADR-0010 (rescaled multiplier + floor) — current; expect stable across M
+- Theorem 1's `‖r‖_∞ ≤ r_max(M)` bound becomes a uniform `4.5` across all M ≥ 1 (since rescale keeps range size = 4 and floor caps lower at -4.0 < unfilled bound). Theorem analysis simplifies to single-UAV form. Update `paper/theorem1.tex` once PR #28 lands so the bound matches.
+
+### Risk and gating
+This is the second M=4 retrain attempt. If ADR-0010 also fails to produce stable HV at M=4, escalate to:
+- **F. Curriculum**: warm-start M=4 from M=2 checkpoint (architecture work)
+- **G. Multi-fidelity reward design**: separate r3 into r3a (per-UAV efficiency) + r3b (fleet-level cost) to give the agent two scalar signals instead of one.
+
+But first: run the experiment and look at the data.
+
+See `environments/uav_semcom_multi_env.py:337-378` for the change.
+
+---
