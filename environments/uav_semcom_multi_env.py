@@ -387,6 +387,7 @@ class MultiUAVSemComEnv(gym.Env):
             "service_rate": service_rate,
             "weighted_avg_fidelity": weighted_avg_fid,
             "mean_aosi": mean_aosi,
+            "max_aosi": float(np.max(self.aosi)),
         }
         return self._get_obs(), reward, done, info
 
