@@ -32,6 +32,7 @@ from .heuristics import (  # noqa: F401
 from .base import Baseline
 from .registry import register_baseline, get_baseline, list_baselines
 from .npz_schema import write_result_npz, validate_result_npz, NpzResult
+from .result_loader import RunResult, ResultGroup, load_run, load_results_dir, parse_fname
 
 __all__ = [
     # backward-compat
@@ -50,6 +51,11 @@ __all__ = [
     "write_result_npz",
     "validate_result_npz",
     "NpzResult",
+    "RunResult",
+    "ResultGroup",
+    "load_run",
+    "load_results_dir",
+    "parse_fname",
 ]
 
 # Auto-register the no-op baseline so ``run_baseline.py --baseline noop`` works
